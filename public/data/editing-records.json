@@ -1,0 +1,20 @@
+{
+  "records": [
+    {
+      "date": "2026-05-20",
+      "editCount": 6,
+      "complexCount": 2,
+      "note": "样例：广告短片和包装修改",
+      "createdAt": "2026-05-20T12:00:00.000Z",
+      "updatedAt": "2026-05-20T12:00:00.000Z"
+    },
+    {
+      "date": "2026-05-21",
+      "editCount": 4,
+      "complexCount": 1,
+      "note": "样例：口播成片和素材整理",
+      "createdAt": "2026-05-21T12:00:00.000Z",
+      "updatedAt": "2026-05-21T12:00:00.000Z"
+    }
+  ]
+}
