@@ -363,11 +363,32 @@ function App() {
             <span></span>
             <span></span>
           </div>
+          <div className="sparkle one"></div>
+          <div className="sparkle two"></div>
+          <div className="editor-screen">
+            <div className="preview-window">
+              <span></span>
+            </div>
+            <div className="mini-timeline">
+              <i></i>
+              <i></i>
+              <i></i>
+            </div>
+          </div>
           <div className="film-roll">
             <i></i>
             <i></i>
             <i></i>
             <i></i>
+          </div>
+          <div className="clip-stack">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div className="editor-mascot">
+            <i></i>
+            <b></b>
           </div>
           <div className="scissor-shape">
             <span></span>
