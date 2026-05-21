@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "report:weekly": "node scripts/generate-reports.mjs --weekly",
+    "report:monthly": "node scripts/generate-reports.mjs --monthly"
   },
   "dependencies": {
     "react": "^19.2.6",

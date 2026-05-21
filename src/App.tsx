@@ -23,8 +23,20 @@ type GitHubFile = {
   sha?: string
 }
 
+type ReportItem = {
+  type: 'weekly' | 'monthly'
+  title: string
+  period: string
+  editCount: number
+  complexCount: number
+  ratio: number
+  generatedAt: string
+  path: string
+}
+
 const DATA_PATH = 'public/data/editing-records.json'
 const DATA_URL = `${import.meta.env.BASE_URL}data/editing-records.json`
+const REPORTS_URL = `${import.meta.env.BASE_URL}data/reports.json`
 const CONFIG_KEY = 'editing-stats-github-config'
 const emptyConfig: GitHubConfig = {
   owner: '',
@@ -68,6 +80,12 @@ function getWeekStart(date: string) {
 
 function getMonthKey(date: string) {
   return date.slice(0, 7)
+}
+
+function getWeekEnd(date: string) {
+  const parsed = parseDate(getWeekStart(date))
+  parsed.setDate(parsed.getDate() + 6)
+  return getChinaDateString(parsed)
 }
 
 function getTotals(records: EditingRecord[]) {
@@ -115,6 +133,119 @@ async function fetchPublicRecords() {
   }
   const payload = (await response.json()) as { records?: EditingRecord[] }
   return normalizeRecords(payload.records ?? [])
+}
+
+async function fetchReports() {
+  const response = await fetch(REPORTS_URL, { cache: 'no-store' })
+  if (!response.ok) {
+    return []
+  }
+  const payload = (await response.json()) as { reports?: ReportItem[] }
+  return payload.reports ?? []
+}
+
+function parseCsv(text: string) {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    const next = text[index + 1]
+    if (char === '"' && quoted && next === '"') {
+      cell += '"'
+      index += 1
+    } else if (char === '"') {
+      quoted = !quoted
+    } else if (char === ',' && !quoted) {
+      row.push(cell.trim())
+      cell = ''
+    } else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') {
+        index += 1
+      }
+      row.push(cell.trim())
+      if (row.some((value) => value.length > 0)) {
+        rows.push(row)
+      }
+      row = []
+      cell = ''
+    } else {
+      cell += char
+    }
+  }
+
+  row.push(cell.trim())
+  if (row.some((value) => value.length > 0)) {
+    rows.push(row)
+  }
+  return rows
+}
+
+function normalizeImportDate(value: string) {
+  const cleaned = value.trim().replace(/[年月]/g, '-').replace(/日/g, '')
+  const match = cleaned.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
+  if (!match) {
+    return ''
+  }
+  const [, year, month, day] = match
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+}
+
+function findColumn(headers: string[], candidates: string[]) {
+  return headers.findIndex((header) =>
+    candidates.some((candidate) => header.includes(candidate)),
+  )
+}
+
+function parseImportedRecords(text: string) {
+  const rows = parseCsv(text.replace(/^\uFEFF/, ''))
+  if (rows.length === 0) {
+    return []
+  }
+
+  const headers = rows[0].map((header) => header.trim())
+  const dateIndex = findColumn(headers, ['日期', '时间', '日子', 'date'])
+  const editIndex = findColumn(headers, [
+    '剪辑数量',
+    '剪辑数',
+    '剪辑',
+    '完成数量',
+    '数量',
+  ])
+  const complexIndex = findColumn(headers, ['复杂片数量', '复杂片', '复杂'])
+  const noteIndex = findColumn(headers, ['备注', '说明', '内容', 'note'])
+  const hasHeader = dateIndex >= 0 && editIndex >= 0
+  const dataRows = hasHeader ? rows.slice(1) : rows
+  const now = new Date().toISOString()
+
+  return dataRows
+    .map((row) => {
+      const date = normalizeImportDate(row[hasHeader ? dateIndex : 0] ?? '')
+      if (!date) {
+        return null
+      }
+      const editCount = Math.max(
+        0,
+        Number(row[hasHeader ? editIndex : 1]?.replace(/[^\d.]/g, '') || 0),
+      )
+      const complexCount = Math.max(
+        0,
+        Number(row[hasHeader && complexIndex >= 0 ? complexIndex : 2]?.replace(/[^\d.]/g, '') || 0),
+      )
+      const note = row[hasHeader && noteIndex >= 0 ? noteIndex : 3] ?? ''
+
+      return {
+        date,
+        editCount,
+        complexCount: Math.min(complexCount, editCount),
+        note,
+        createdAt: now,
+        updatedAt: now,
+      }
+    })
+    .filter((record): record is EditingRecord => record !== null)
 }
 
 async function fetchRecordsFromGitHub(config: GitHubConfig): Promise<GitHubFile> {
@@ -186,6 +317,7 @@ function App() {
   })
   const [config, setConfig] = useState<GitHubConfig>(readSavedConfig)
   const [fileSha, setFileSha] = useState<string>()
+  const [reports, setReports] = useState<ReportItem[]>([])
   const [status, setStatus] = useState('正在读取公开数据...')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -196,6 +328,7 @@ function App() {
         setStatus(`已读取 ${loadedRecords.length} 条记录`)
       })
       .catch((error: Error) => setStatus(error.message))
+    fetchReports().then(setReports)
   }, [])
 
   const today = getChinaDateString(new Date())
@@ -282,6 +415,39 @@ function App() {
     }
   }
 
+  async function syncRecordsToGitHub(nextRecords: EditingRecord[], successText: string) {
+    if (!config.owner || !config.repo || !config.branch || !config.token) {
+      setStatus('已在页面中更新，请补全 GitHub 设置后再同步到仓库')
+      return
+    }
+
+    setIsSaving(true)
+    setStatus('正在保存到 GitHub...')
+    try {
+      const latestFile = fileSha
+        ? { records, sha: fileSha }
+        : await fetchRecordsFromGitHub(config)
+      const mergedRecords = normalizeRecords([
+        ...latestFile.records.filter(
+          (record) => !nextRecords.some((nextRecord) => nextRecord.date === record.date),
+        ),
+        ...nextRecords,
+      ])
+      const nextSha = await saveRecordsToGitHub(
+        config,
+        mergedRecords,
+        latestFile.sha,
+      )
+      setRecords(mergedRecords)
+      setFileSha(nextSha)
+      setStatus(successText)
+    } catch (error) {
+      setStatus((error as Error).message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -312,36 +478,48 @@ function App() {
     ])
 
     setRecords(nextRecords)
+    await syncRecordsToGitHub(
+      [nextRecord],
+      '已保存到 GitHub，GitHub Pages 会稍后自动更新',
+    )
+    if (config.owner && config.repo && config.branch && config.token) {
+      setForm({ ...defaultForm, date: form.date })
+    }
+  }
 
-    if (!config.owner || !config.repo || !config.branch || !config.token) {
-      setStatus('已在页面中更新，请补全 GitHub 设置后再同步到仓库')
+  async function importRecordsFromFile(file: File) {
+    const text = await file.text()
+    const importedRecords = file.name.endsWith('.json')
+      ? normalizeRecords(
+          ((JSON.parse(text) as { records?: EditingRecord[] }).records ?? []).map(
+            (record) => ({
+              ...record,
+              complexCount: Math.min(record.complexCount, record.editCount),
+            }),
+          ),
+        )
+      : normalizeRecords(parseImportedRecords(text))
+
+    if (importedRecords.length === 0) {
+      setStatus('没有识别到可导入的数据，请确认表格里有日期和剪辑数量')
       return
     }
 
-    setIsSaving(true)
-    setStatus('正在保存到 GitHub...')
-    try {
-      const latestFile = fileSha
-        ? { records, sha: fileSha }
-        : await fetchRecordsFromGitHub(config)
-      const mergedRecords = normalizeRecords([
-        ...latestFile.records.filter((record) => record.date !== form.date),
-        nextRecord,
-      ])
-      const nextSha = await saveRecordsToGitHub(
-        config,
-        mergedRecords,
-        latestFile.sha,
-      )
-      setRecords(mergedRecords)
-      setFileSha(nextSha)
-      setStatus('已保存到 GitHub，GitHub Pages 会稍后自动更新')
-      setForm({ ...defaultForm, date: form.date })
-    } catch (error) {
-      setStatus((error as Error).message)
-    } finally {
-      setIsSaving(false)
-    }
+    const mergedRecords = normalizeRecords([
+      ...records.filter(
+        (record) =>
+          !importedRecords.some(
+            (importedRecord) => importedRecord.date === record.date,
+          ),
+      ),
+      ...importedRecords,
+    ])
+    setRecords(mergedRecords)
+    setStatus(`已导入 ${importedRecords.length} 天数据，请同步到 GitHub 保存`)
+    await syncRecordsToGitHub(
+      importedRecords,
+      `已导入并同步 ${importedRecords.length} 天数据`,
+    )
   }
 
   function editRecord(record: EditingRecord) {
@@ -560,6 +738,65 @@ function App() {
             令牌需要仓库内容读取和写入权限。公开页面不会包含你的令牌。
           </p>
         </section>
+      </section>
+
+      <section className="panel import-panel">
+        <div className="section-heading">
+          <p>腾讯文档导入</p>
+          <h2>把以前的数据一次合并进来</h2>
+        </div>
+        <div className="import-box">
+          <label>
+            上传腾讯文档导出的 CSV 表格
+            <input
+              accept=".csv,.json,text/csv,application/json"
+              type="file"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) {
+                  void importRecordsFromFile(file)
+                }
+                event.target.value = ''
+              }}
+            />
+          </label>
+          <p className="helper-text">
+            表头建议使用：日期、剪辑数量、复杂片数量、备注。导入时会按日期合并，同一天的新数据会覆盖旧数据。
+          </p>
+        </div>
+      </section>
+
+      <section className="panel reports-panel">
+        <div className="section-heading">
+          <p>自动报告</p>
+          <h2>周总结和月总结</h2>
+        </div>
+        <div className="report-grid">
+          <article className="report-card">
+            <strong>本周总结</strong>
+            <span>{currentWeek} 至 {getWeekEnd(today)}</span>
+            <p>剪辑 {getTotals(weekRecords).editCount} 个，复杂片 {getTotals(weekRecords).complexCount} 个。</p>
+          </article>
+          <article className="report-card">
+            <strong>本月总结</strong>
+            <span>{currentMonth}</span>
+            <p>剪辑 {getTotals(monthRecords).editCount} 个，复杂片 {getTotals(monthRecords).complexCount} 个。</p>
+          </article>
+          {reports.slice(0, 4).map((report) => (
+            <a
+              className="report-card"
+              href={`${import.meta.env.BASE_URL}${report.path}`}
+              key={report.path}
+            >
+              <strong>{report.title}</strong>
+              <span>{report.period}</span>
+              <p>剪辑 {report.editCount} 个，复杂片 {report.complexCount} 个，占比 {report.ratio}%。</p>
+            </a>
+          ))}
+        </div>
+        <p className="helper-text">
+          部署到 GitHub 后，自动流程会在每周一晚上生成周总结，并在月底生成月总结。
+        </p>
       </section>
 
       <section className="panel search-panel">

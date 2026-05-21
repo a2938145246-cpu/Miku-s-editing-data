@@ -1,0 +1,24 @@
+{
+  "reports": [
+    {
+      "type": "monthly",
+      "title": "月总结 2026-05",
+      "period": "2026-05",
+      "editCount": 10,
+      "complexCount": 3,
+      "ratio": 30,
+      "generatedAt": "2026-05-21T18:21:20.954Z",
+      "path": "reports/monthly-2026-05.md"
+    },
+    {
+      "type": "weekly",
+      "title": "周总结 2026-05-18 至 2026-05-24",
+      "period": "2026-05-18 至 2026-05-24",
+      "editCount": 10,
+      "complexCount": 3,
+      "ratio": 30,
+      "generatedAt": "2026-05-21T18:20:06.521Z",
+      "path": "reports/weekly-2026-05-18.md"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+name: Generate editing reports
+
+on:
+  schedule:
+    - cron: '0 13 * * 1'
+    - cron: '30 15 28-31 * *'
+  workflow_dispatch:
+    inputs:
+      report_type:
+        description: 'weekly or monthly'
+        required: true
+        default: 'weekly'
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate report
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            npm run "report:${{ github.event.inputs.report_type }}"
+          elif [ "$(TZ=Asia/Shanghai date +%u)" = "1" ]; then
+            npm run report:weekly
+          fi
+
+          tomorrow_month="$(TZ=Asia/Shanghai date -d tomorrow +%m)"
+          today_month="$(TZ=Asia/Shanghai date +%m)"
+          if [ "$tomorrow_month" != "$today_month" ]; then
+            npm run report:monthly
+          fi
+
+      - name: Commit report
+        uses: stefanzweifel/git-auto-commit-action@v6
+        with:
+          commit_message: Generate editing data report
+          file_pattern: public/data/reports.json public/reports/*.md
