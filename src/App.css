@@ -273,36 +273,51 @@ h1 {
   transform: rotate(-18deg);
 }
 
+.q-jinx {
+  background: url('./assets/q-jinx-cutout.png') center bottom / contain no-repeat;
+  filter: drop-shadow(0 12px 14px rgba(33, 37, 41, 0.24));
+}
+
+.q-jinx::before,
+.q-jinx::after,
+.q-jinx i,
+.q-jinx b,
+.q-jinx span {
+  display: none;
+}
+
 .main-jinx {
-  top: 82px;
-  left: 108px;
-  transform: scale(1.35) rotate(-3deg);
+  top: 46px;
+  left: 72px;
+  width: 225px;
+  height: 296px;
+  transform: rotate(-4deg);
 }
 
 .corner-jinx {
-  width: 86px;
-  height: 96px;
-  transform: scale(0.58);
+  width: 92px;
+  height: 122px;
+  transform: none;
   transform-origin: top left;
 }
 
 .cartoon-board .top-left {
-  top: 54px;
-  left: 22px;
-  transform: scale(0.52) rotate(-12deg);
+  top: 52px;
+  left: 18px;
+  transform: rotate(-12deg);
 }
 
 .cartoon-board .bottom-right {
-  right: 10px;
-  bottom: 16px;
-  transform: scale(0.5) rotate(10deg);
+  right: 4px;
+  bottom: 8px;
+  transform: rotate(10deg);
 }
 
 .page-jinx-corner {
   position: fixed;
   z-index: 4;
-  width: 64px;
-  height: 72px;
+  width: 88px;
+  height: 116px;
   pointer-events: none;
 }
 
@@ -993,7 +1008,7 @@ button:disabled {
 
   .main-jinx {
     left: 50%;
-    transform: translateX(-50%) scale(1.22) rotate(-3deg);
+    transform: translateX(-50%) scale(0.92) rotate(-3deg);
   }
 
   .page-jinx-corner {
