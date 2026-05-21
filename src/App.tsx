@@ -254,6 +254,16 @@ function App() {
   }, [records, filters])
 
   const filteredTotals = getTotals(filteredRecords)
+  const chartRecords = useMemo(
+    () => [...records].sort((a, b) => a.date.localeCompare(b.date)).slice(-7),
+    [records],
+  )
+  const chartMax = Math.max(
+    1,
+    ...chartRecords.map((record) =>
+      Math.max(record.editCount, record.complexCount),
+    ),
+  )
 
   function saveConfig() {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
@@ -346,6 +356,20 @@ function App() {
 
   return (
     <main className="app-shell">
+      <div className="page-jinx-corner left-corner" aria-hidden="true">
+        <div className="q-jinx corner-jinx">
+          <i></i>
+          <b></b>
+          <span></span>
+        </div>
+      </div>
+      <div className="page-jinx-corner right-corner" aria-hidden="true">
+        <div className="q-jinx corner-jinx">
+          <i></i>
+          <b></b>
+          <span></span>
+        </div>
+      </div>
       <section className="hero-section" aria-label="剪辑统计概览">
         <div className="hero-copy">
           <p className="eyebrow">个人剪辑数据站</p>
@@ -365,50 +389,64 @@ function App() {
           </div>
           <div className="sparkle one"></div>
           <div className="sparkle two"></div>
-          <div className="editor-screen">
-            <div className="preview-window">
-              <span></span>
-            </div>
-            <div className="mini-timeline">
-              <i></i>
-              <i></i>
-              <i></i>
-            </div>
-          </div>
-          <div className="film-roll">
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-          </div>
-          <div className="clip-stack">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-          <div className="editor-mascot">
+          <div className="q-jinx main-jinx">
             <i></i>
             <b></b>
-          </div>
-          <div className="scissor-shape">
-            <span></span>
             <span></span>
           </div>
-          <div className="timeline-line">
+          <div className="q-jinx corner-jinx top-left">
+            <i></i>
             <b></b>
+            <span></span>
+          </div>
+          <div className="q-jinx corner-jinx bottom-right">
+            <i></i>
+            <b></b>
+            <span></span>
           </div>
         </div>
       </section>
 
-      <section className="summary-grid" aria-label="核心统计">
-        {summary.map((item) => (
-          <article className={`stat-card ${item.tone}`} key={item.label}>
-            <span className="stat-icon"></span>
-            <p>{item.label}</p>
-            <strong>{item.value}</strong>
-            <small>{item.sub}</small>
-          </article>
-        ))}
+      <section className="summary-layout" aria-label="核心统计">
+        <div className="summary-grid">
+          {summary.map((item) => (
+            <article className={`stat-card ${item.tone}`} key={item.label}>
+              <span className="stat-icon"></span>
+              <p>{item.label}</p>
+              <strong>{item.value}</strong>
+              <small>{item.sub}</small>
+            </article>
+          ))}
+        </div>
+        <aside className="panel side-chart" aria-label="最近七天柱形统计图">
+          <div className="section-heading">
+            <p>趋势柱形图</p>
+            <h2>最近七天</h2>
+          </div>
+          <div className="bar-chart">
+            {chartRecords.map((record) => (
+              <div className="bar-item" key={record.date}>
+                <div className="bar-track">
+                  <span
+                    className="bar edit-bar"
+                    style={{ height: `${(record.editCount / chartMax) * 100}%` }}
+                  ></span>
+                  <span
+                    className="bar complex-bar"
+                    style={{
+                      height: `${(record.complexCount / chartMax) * 100}%`,
+                    }}
+                  ></span>
+                </div>
+                <small>{record.date.slice(5)}</small>
+              </div>
+            ))}
+          </div>
+          <div className="chart-legend">
+            <span>剪辑数量</span>
+            <span>复杂片</span>
+          </div>
+        </aside>
       </section>
 
       <section className="work-grid">
