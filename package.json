@@ -9,11 +9,13 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "report:weekly": "node scripts/generate-reports.mjs --weekly",
-    "report:monthly": "node scripts/generate-reports.mjs --monthly"
+    "report:monthly": "node scripts/generate-reports.mjs --monthly",
+    "report:wechat": "node scripts/send-wechat-report.mjs"
   },
   "dependencies": {
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

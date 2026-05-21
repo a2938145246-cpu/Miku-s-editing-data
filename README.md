@@ -46,3 +46,27 @@ public/data/editing-records.json
 2. 进入 Pages，也就是静态网页托管。
 3. Source 选择 GitHub Actions，也就是 GitHub 自动化流程。
 4. 推送到 `main` 分支后会自动构建和部署。
+
+## 腾讯文档导入
+
+腾讯文档里的历史数据可以导出为 `.xlsx`、`.xls` 或 `.csv` 文件，然后在网站的“腾讯文档导入”区域上传。
+
+推荐表头：
+
+```text
+日期,剪辑数量,复杂片数量,备注
+```
+
+导入时会按日期合并。同一天如果已经有数据，新导入的数据会覆盖旧数据。
+
+## 微信推送
+
+个人微信推荐使用 Server 酱。配置后，自动周总结和月总结会推送到微信。
+
+在 GitHub 仓库里进入 Settings，也就是设置，然后进入 Secrets and variables，再进入 Actions，新增密钥：
+
+```text
+SERVER_CHAN_SENDKEY
+```
+
+值填写你在 Server 酱获得的 SendKey。没有配置这个密钥时，报告仍会生成，只是不会推送到微信。

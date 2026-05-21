@@ -50,3 +50,9 @@ jobs:
         with:
           commit_message: Generate editing data report
           file_pattern: public/data/reports.json public/reports/*.md
+
+      - name: Send report to WeChat
+        env:
+          SERVER_CHAN_SENDKEY: ${{ secrets.SERVER_CHAN_SENDKEY }}
+          WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
+        run: npm run report:wechat

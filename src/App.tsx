@@ -201,6 +201,10 @@ function findColumn(headers: string[], candidates: string[]) {
 
 function parseImportedRecords(text: string) {
   const rows = parseCsv(text.replace(/^\uFEFF/, ''))
+  return parseImportedRows(rows)
+}
+
+function parseImportedRows(rows: string[][]) {
   if (rows.length === 0) {
     return []
   }
@@ -228,11 +232,11 @@ function parseImportedRecords(text: string) {
       }
       const editCount = Math.max(
         0,
-        Number(row[hasHeader ? editIndex : 1]?.replace(/[^\d.]/g, '') || 0),
+        Number(String(row[hasHeader ? editIndex : 1] ?? '').replace(/[^\d.]/g, '') || 0),
       )
       const complexCount = Math.max(
         0,
-        Number(row[hasHeader && complexIndex >= 0 ? complexIndex : 2]?.replace(/[^\d.]/g, '') || 0),
+        Number(String(row[hasHeader && complexIndex >= 0 ? complexIndex : 2] ?? '').replace(/[^\d.]/g, '') || 0),
       )
       const note = row[hasHeader && noteIndex >= 0 ? noteIndex : 3] ?? ''
 
@@ -246,6 +250,27 @@ function parseImportedRecords(text: string) {
       }
     })
     .filter((record): record is EditingRecord => record !== null)
+}
+
+async function parseXlsxFile(file: File) {
+  const XLSX = await import('xlsx')
+  const buffer = await file.arrayBuffer()
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+  const rawRows = XLSX.utils.sheet_to_json<Array<string | number | Date | null>>(
+    firstSheet,
+    {
+      header: 1,
+      raw: false,
+      dateNF: 'yyyy-mm-dd',
+    },
+  )
+  const rows = rawRows.map((row) =>
+    row.map((cell) =>
+      cell instanceof Date ? getChinaDateString(cell) : String(cell ?? '').trim(),
+    ),
+  )
+  return parseImportedRows(rows)
 }
 
 async function fetchRecordsFromGitHub(config: GitHubConfig): Promise<GitHubFile> {
@@ -488,17 +513,19 @@ function App() {
   }
 
   async function importRecordsFromFile(file: File) {
-    const text = await file.text()
-    const importedRecords = file.name.endsWith('.json')
-      ? normalizeRecords(
-          ((JSON.parse(text) as { records?: EditingRecord[] }).records ?? []).map(
-            (record) => ({
-              ...record,
-              complexCount: Math.min(record.complexCount, record.editCount),
-            }),
-          ),
-        )
-      : normalizeRecords(parseImportedRecords(text))
+    const fileName = file.name.toLowerCase()
+    const importedRecords = fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
+      ? normalizeRecords(await parseXlsxFile(file))
+      : fileName.endsWith('.json')
+        ? normalizeRecords(
+            ((JSON.parse(await file.text()) as { records?: EditingRecord[] }).records ?? []).map(
+              (record) => ({
+                ...record,
+                complexCount: Math.min(record.complexCount, record.editCount),
+              }),
+            ),
+          )
+        : normalizeRecords(parseImportedRecords(await file.text()))
 
     if (importedRecords.length === 0) {
       setStatus('没有识别到可导入的数据，请确认表格里有日期和剪辑数量')
@@ -749,7 +776,7 @@ function App() {
           <label>
             上传腾讯文档导出的 CSV 表格
             <input
-              accept=".csv,.json,text/csv,application/json"
+              accept=".csv,.xlsx,.xls,.json,text/csv,application/json"
               type="file"
               onChange={(event) => {
                 const file = event.target.files?.[0]
@@ -761,7 +788,7 @@ function App() {
             />
           </label>
           <p className="helper-text">
-            表头建议使用：日期、剪辑数量、复杂片数量、备注。导入时会按日期合并，同一天的新数据会覆盖旧数据。
+            支持 CSV、XLSX 和 JSON。表头建议使用：日期、剪辑数量、复杂片数量、备注。导入时会按日期合并，同一天的新数据会覆盖旧数据。
           </p>
         </div>
       </section>
