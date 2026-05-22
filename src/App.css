@@ -870,17 +870,30 @@ button:disabled {
 }
 
 .import-panel,
+.maintenance-panel,
 .reports-panel {
   margin-top: 18px;
 }
 
-.import-box {
+.import-box,
+.maintenance-box {
   display: grid;
   gap: 12px;
   padding: 16px;
   border: 1px dashed var(--ink);
   border-radius: 8px;
   background: rgba(255, 253, 247, 0.76);
+}
+
+.maintenance-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 14px;
+}
+
+.maintenance-box strong {
+  color: var(--ink);
+  font-size: 18px;
 }
 
 .report-grid {
@@ -1024,6 +1037,10 @@ button:disabled {
 
   .report-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .maintenance-grid {
+    grid-template-columns: 1fr;
   }
 
   .side-chart {

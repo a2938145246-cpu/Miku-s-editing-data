@@ -43,9 +43,13 @@ function getMonthKey(date) {
 function getTotals(records) {
   const editCount = records.reduce((sum, record) => sum + record.editCount, 0)
   const complexCount = records.reduce((sum, record) => sum + record.complexCount, 0)
+  const activeDays = records.filter((record) => record.editCount > 0).length
   return {
     editCount,
     complexCount,
+    activeDays,
+    averagePerActiveDay:
+      activeDays > 0 ? Math.round((editCount / activeDays) * 10) / 10 : 0,
     ratio: editCount > 0 ? Math.round((complexCount / editCount) * 100) : 0,
   }
 }
@@ -74,6 +78,8 @@ function createReport(type, today, records) {
     `- 复杂片数量：${totals.complexCount}`,
     `- 复杂片占比：${totals.ratio}%`,
     `- 记录天数：${scopedRecords.length}`,
+    `- 活跃天数：${totals.activeDays}`,
+    `- 活跃日均剪辑：${totals.averagePerActiveDay}`,
     bestDay ? `- 最高产出日：${bestDay.date}，剪辑 ${bestDay.editCount} 个` : '- 最高产出日：暂无',
     '',
     '## 明细',
@@ -95,6 +101,8 @@ function createReport(type, today, records) {
     period,
     editCount: totals.editCount,
     complexCount: totals.complexCount,
+    activeDays: totals.activeDays,
+    averagePerActiveDay: totals.averagePerActiveDay,
     ratio: totals.ratio,
     generatedAt: new Date().toISOString(),
     path: reportPath,

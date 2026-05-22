@@ -29,6 +29,8 @@ function createMarkdown(report) {
       `- 剪辑总数：${report.editCount}`,
       `- 复杂片数量：${report.complexCount}`,
       `- 复杂片占比：${report.ratio}%`,
+      `- 活跃天数：${report.activeDays ?? 0}`,
+      `- 活跃日均剪辑：${report.averagePerActiveDay ?? 0}`,
       '',
       `报告文件：${report.path}`,
     ].join('\n'),

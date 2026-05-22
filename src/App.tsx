@@ -29,6 +29,8 @@ type ReportItem = {
   period: string
   editCount: number
   complexCount: number
+  activeDays?: number
+  averagePerActiveDay?: number
   ratio: number
   generatedAt: string
   path: string
@@ -94,10 +96,14 @@ function getTotals(records: EditingRecord[]) {
     (sum, record) => sum + record.complexCount,
     0,
   )
+  const activeDays = records.filter((record) => record.editCount > 0).length
 
   return {
     editCount,
     complexCount,
+    activeDays,
+    averagePerActiveDay:
+      activeDays > 0 ? Math.round((editCount / activeDays) * 10) / 10 : 0,
     ratio: editCount > 0 ? Math.round((complexCount / editCount) * 100) : 0,
   }
 }
@@ -331,6 +337,23 @@ async function saveRecordsToGitHub(
   return payload.content.sha
 }
 
+function createDownload(fileName: string, content: string, type: string) {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function csvEscape(value: string | number) {
+  const text = String(value)
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
 function App() {
   const [records, setRecords] = useState<EditingRecord[]>([])
   const [form, setForm] = useState(defaultForm)
@@ -343,6 +366,14 @@ function App() {
   const [config, setConfig] = useState<GitHubConfig>(readSavedConfig)
   const [fileSha, setFileSha] = useState<string>()
   const [reports, setReports] = useState<ReportItem[]>([])
+  const [restorePoint, setRestorePoint] = useState<{
+    label: string
+    records: EditingRecord[]
+  } | null>(null)
+  const [deleteRange, setDeleteRange] = useState({
+    startDate: '',
+    endDate: '',
+  })
   const [status, setStatus] = useState('正在读取公开数据...')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -473,6 +504,35 @@ function App() {
     }
   }
 
+  async function saveAllRecordsToGitHub(
+    nextRecords: EditingRecord[],
+    successText: string,
+  ) {
+    if (!config.owner || !config.repo || !config.branch || !config.token) {
+      setStatus('已在页面中更新，请补全 GitHub 设置后再同步到仓库')
+      return
+    }
+
+    setIsSaving(true)
+    setStatus('正在保存到 GitHub...')
+    try {
+      const latestFile = fileSha
+        ? { sha: fileSha }
+        : await fetchRecordsFromGitHub(config)
+      const nextSha = await saveRecordsToGitHub(
+        config,
+        normalizeRecords(nextRecords),
+        latestFile.sha,
+      )
+      setFileSha(nextSha)
+      setStatus(successText)
+    } catch (error) {
+      setStatus((error as Error).message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -541,12 +601,100 @@ function App() {
       ),
       ...importedRecords,
     ])
+    setRestorePoint({
+      label: `撤销导入 ${file.name}`,
+      records,
+    })
     setRecords(mergedRecords)
     setStatus(`已导入 ${importedRecords.length} 天数据，请同步到 GitHub 保存`)
-    await syncRecordsToGitHub(
-      importedRecords,
+    await saveAllRecordsToGitHub(
+      mergedRecords,
       `已导入并同步 ${importedRecords.length} 天数据`,
     )
+  }
+
+  async function deleteRecordsByRange() {
+    if (!deleteRange.startDate || !deleteRange.endDate) {
+      setStatus('请选择要删除的开始日期和结束日期')
+      return
+    }
+    if (deleteRange.startDate > deleteRange.endDate) {
+      setStatus('开始日期不能晚于结束日期')
+      return
+    }
+
+    const matchedRecords = records.filter(
+      (record) =>
+        record.date >= deleteRange.startDate && record.date <= deleteRange.endDate,
+    )
+    if (matchedRecords.length === 0) {
+      setStatus('这个日期范围内没有可删除的数据')
+      return
+    }
+    const confirmed = window.confirm(
+      `确认删除 ${deleteRange.startDate} 到 ${deleteRange.endDate} 的 ${matchedRecords.length} 天数据吗？`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    const nextRecords = normalizeRecords(
+      records.filter(
+        (record) =>
+          record.date < deleteRange.startDate || record.date > deleteRange.endDate,
+      ),
+    )
+    setRestorePoint({
+      label: `撤销删除 ${deleteRange.startDate} 到 ${deleteRange.endDate}`,
+      records,
+    })
+    setRecords(nextRecords)
+    await saveAllRecordsToGitHub(
+      nextRecords,
+      `已删除 ${matchedRecords.length} 天数据，并同步到 GitHub`,
+    )
+  }
+
+  async function undoLastDataChange() {
+    if (!restorePoint) {
+      return
+    }
+    const previousRecords = restorePoint.records
+    setRecords(previousRecords)
+    setStatus(`已${restorePoint.label}`)
+    setRestorePoint(null)
+    await saveAllRecordsToGitHub(previousRecords, '已撤销并同步到 GitHub')
+  }
+
+  function exportRecords(format: 'json' | 'csv') {
+    const fileDate = getChinaDateString(new Date())
+    if (format === 'json') {
+      createDownload(
+        `剪辑数据备份-${fileDate}.json`,
+        `${JSON.stringify({ records: normalizeRecords(records) }, null, 2)}\n`,
+        'application/json;charset=utf-8',
+      )
+      setStatus('已导出 JSON 备份')
+      return
+    }
+
+    const csv = [
+      ['日期', '剪辑数量', '复杂片数量', '备注', '创建时间', '更新时间'],
+      ...normalizeRecords(records)
+        .reverse()
+        .map((record) => [
+          record.date,
+          record.editCount,
+          record.complexCount,
+          record.note,
+          record.createdAt,
+          record.updatedAt,
+        ]),
+    ]
+      .map((row) => row.map(csvEscape).join(','))
+      .join('\n')
+    createDownload(`剪辑数据备份-${fileDate}.csv`, `\uFEFF${csv}\n`, 'text/csv;charset=utf-8')
+    setStatus('已导出 CSV 备份')
   }
 
   function editRecord(record: EditingRecord) {
@@ -793,6 +941,72 @@ function App() {
         </div>
       </section>
 
+      <section className="panel maintenance-panel">
+        <div className="section-heading">
+          <p>数据维护</p>
+          <h2>删错可撤回，重要数据可备份</h2>
+        </div>
+        <div className="maintenance-grid">
+          <div className="maintenance-box">
+            <strong>按日期范围删除</strong>
+            <div className="form-row">
+              <label>
+                开始日期
+                <input
+                  type="date"
+                  value={deleteRange.startDate}
+                  onChange={(event) =>
+                    setDeleteRange({
+                      ...deleteRange,
+                      startDate: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                结束日期
+                <input
+                  type="date"
+                  value={deleteRange.endDate}
+                  onChange={(event) =>
+                    setDeleteRange({
+                      ...deleteRange,
+                      endDate: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={() => void deleteRecordsByRange()}>
+                删除范围内数据
+              </button>
+              <button
+                disabled={!restorePoint}
+                type="button"
+                onClick={() => void undoLastDataChange()}
+              >
+                {restorePoint ? restorePoint.label : '暂无可撤销操作'}
+              </button>
+            </div>
+          </div>
+          <div className="maintenance-box">
+            <strong>导出备份</strong>
+            <p className="helper-text">
+              上传 GitHub 前后都可以导出，建议导入大批量数据前先备份一次。
+            </p>
+            <div className="button-row">
+              <button type="button" onClick={() => exportRecords('json')}>
+                导出 JSON 备份
+              </button>
+              <button type="button" onClick={() => exportRecords('csv')}>
+                导出 CSV 表格
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="panel reports-panel">
         <div className="section-heading">
           <p>自动报告</p>
@@ -802,12 +1016,12 @@ function App() {
           <article className="report-card">
             <strong>本周总结</strong>
             <span>{currentWeek} 至 {getWeekEnd(today)}</span>
-            <p>剪辑 {getTotals(weekRecords).editCount} 个，复杂片 {getTotals(weekRecords).complexCount} 个。</p>
+            <p>剪辑 {getTotals(weekRecords).editCount} 个，复杂片 {getTotals(weekRecords).complexCount} 个，活跃日均 {getTotals(weekRecords).averagePerActiveDay} 个。</p>
           </article>
           <article className="report-card">
             <strong>本月总结</strong>
             <span>{currentMonth}</span>
-            <p>剪辑 {getTotals(monthRecords).editCount} 个，复杂片 {getTotals(monthRecords).complexCount} 个。</p>
+            <p>剪辑 {getTotals(monthRecords).editCount} 个，复杂片 {getTotals(monthRecords).complexCount} 个，活跃日均 {getTotals(monthRecords).averagePerActiveDay} 个。</p>
           </article>
           {reports.slice(0, 4).map((report) => (
             <a
@@ -817,7 +1031,7 @@ function App() {
             >
               <strong>{report.title}</strong>
               <span>{report.period}</span>
-              <p>剪辑 {report.editCount} 个，复杂片 {report.complexCount} 个，占比 {report.ratio}%。</p>
+              <p>剪辑 {report.editCount} 个，复杂片 {report.complexCount} 个，活跃日均 {report.averagePerActiveDay ?? 0} 个。</p>
             </a>
           ))}
         </div>
