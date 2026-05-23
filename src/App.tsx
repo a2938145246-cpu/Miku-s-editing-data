@@ -168,6 +168,11 @@ function readSavedConfig() {
   }
 }
 
+function shouldOpenAdminMode() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('admin') === '1' || params.get('edit') === '1'
+}
+
 function hasGitHubConfig(config: GitHubConfig) {
   return Boolean(
     config.owner.trim() &&
@@ -584,6 +589,7 @@ function App() {
   const [status, setStatus] = useState('正在读取公开数据...')
   const [isSaving, setIsSaving] = useState(false)
   const isGitHubReady = hasGitHubConfig(config)
+  const isAdminMode = isGitHubReady || shouldOpenAdminMode()
 
   useEffect(() => {
     fetchPublicRecords()
@@ -1187,26 +1193,28 @@ function App() {
           <p>月目标</p>
           <h2>{currentMonth} 剪辑目标</h2>
         </div>
-        <div className="goal-layout">
-          <div className="goal-input-box">
-            <label>
-              本月目标条数
-              <input
-                min="0"
-                type="number"
-                placeholder="例如：120"
-                value={monthlyGoalDraft}
-                onChange={(event) => setMonthlyGoalDraft(event.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              disabled={isSaving || !isGitHubReady}
-              onClick={() => void saveMonthlyGoal()}
-            >
-              保存月目标
-            </button>
-          </div>
+        <div className={isAdminMode ? 'goal-layout' : 'goal-layout public-goal-layout'}>
+          {isAdminMode && (
+            <div className="goal-input-box">
+              <label>
+                本月目标条数
+                <input
+                  min="0"
+                  type="number"
+                  placeholder="例如：120"
+                  value={monthlyGoalDraft}
+                  onChange={(event) => setMonthlyGoalDraft(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={isSaving || !isGitHubReady}
+                onClick={() => void saveMonthlyGoal()}
+              >
+                保存月目标
+              </button>
+            </div>
+          )}
           <div className="goal-progress-box">
             <div className="goal-progress-head">
               <strong>{monthlyProgress}%</strong>
@@ -1233,234 +1241,238 @@ function App() {
         </p>
       </section>
 
-      <section className="work-grid">
-        <form className="panel record-form" onSubmit={handleSubmit}>
-          <div className="section-heading">
-            <p>每日录入</p>
-            <h2>新增或修改一天的数据</h2>
-          </div>
-          <label>
-            日期
-            <input
-              type="date"
-              value={form.date}
-              onChange={(event) => setForm({ ...form, date: event.target.value })}
-            />
-          </label>
-          <div className="form-row">
-            <label>
-              剪辑数量
-              <input
-                min="0"
-                type="number"
-                value={form.editCount}
-                onChange={(event) =>
-                  setForm({ ...form, editCount: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              复杂片数量
-              <input
-                min="0"
-                type="number"
-                value={form.complexCount}
-                onChange={(event) =>
-                  setForm({ ...form, complexCount: event.target.value })
-                }
-              />
-            </label>
-          </div>
-          <label>
-            备注
-            <textarea
-              rows={4}
-              placeholder="例如：广告短片、口播包装、修改返工..."
-              value={form.note}
-              onChange={(event) => setForm({ ...form, note: event.target.value })}
-            />
-          </label>
-          <button
-            className="primary-button"
-            type="submit"
-            disabled={isSaving || !isGitHubReady}
-          >
-            {isSaving
-              ? '同步中...'
-              : isGitHubReady
-                ? '保存今天的数据'
-                : '填入令牌后才能保存'}
-          </button>
-        </form>
-
-        <section className="panel">
-          <div className="section-heading">
-            <p>GitHub 同步</p>
-            <h2>把数据写回仓库文件</h2>
-          </div>
-          <div className={`sync-state ${isGitHubReady ? 'ready' : 'locked'}`}>
-            <strong>{isGitHubReady ? '当前浏览器已连接，可保存数据' : '未连接令牌，只能查看公开数据'}</strong>
-            <span>
-              {isGitHubReady
-                ? '用户名、仓库名、分支和令牌都会记在这台设备的浏览器里。'
-                : '公开访问者看得到页面，但没有你的令牌就不能写入仓库。'}
-            </span>
-          </div>
-          <div className="form-row">
-            <label>
-              用户名
-              <input
-                placeholder="a2938145246-cpu"
-                value={config.owner}
-                onChange={(event) =>
-                  setConfig({ ...config, owner: event.target.value.trim() })
-                }
-              />
-            </label>
-            <label>
-              仓库名
-              <input
-                placeholder="Miku-s-editing-data"
-                value={config.repo}
-                onChange={(event) =>
-                  setConfig({ ...config, repo: event.target.value.trim() })
-                }
-              />
-            </label>
-          </div>
-          <label>
-            分支
-            <input
-              value={config.branch}
-              onChange={(event) =>
-                setConfig({ ...config, branch: event.target.value.trim() })
-              }
-            />
-          </label>
-          <label>
-            令牌
-            <input
-              type="password"
-              placeholder="只保存在当前浏览器"
-              value={config.token}
-              onChange={(event) =>
-                setConfig({ ...config, token: event.target.value.trim() })
-              }
-            />
-          </label>
-          <div className="button-row">
-            <button type="button" onClick={saveConfig}>
-              保存并记住设置
-            </button>
-            <button type="button" onClick={pullGitHubRecords} disabled={!isGitHubReady}>
-              读取最新数据
-            </button>
-            <button type="button" onClick={clearConfig}>
-              清除令牌
-            </button>
-          </div>
-          <p className="helper-text">
-            令牌需要仓库内容读取和写入权限。公开页面不会包含你的令牌，换手机或换浏览器时需要再填一次令牌。
-          </p>
-        </section>
-      </section>
-
-      <section className="panel import-panel">
-        <div className="section-heading">
-          <p>腾讯文档导入</p>
-          <h2>把以前的数据一次合并进来</h2>
-        </div>
-        <div className="import-box">
-          <label>
-            上传腾讯文档导出的表格
-            <input
-              accept=".csv,.xlsx,.xls,.json,text/csv,application/json"
-              disabled={!isGitHubReady || isSaving}
-              type="file"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) {
-                  void importRecordsFromFile(file)
-                }
-                event.target.value = ''
-              }}
-            />
-          </label>
-          <p className="helper-text">
-            支持 CSV、XLSX、XLS 和 JSON。表头建议使用：日期、剪辑数量、复杂片数量、备注。导入时会按日期合并，同一天的新数据会覆盖旧数据。
-          </p>
-        </div>
-      </section>
-
-      <section className="panel maintenance-panel">
-        <div className="section-heading">
-          <p>数据维护</p>
-          <h2>删错可撤回，重要数据可备份</h2>
-        </div>
-        <div className="maintenance-grid">
-          <div className="maintenance-box">
-            <strong>按日期范围删除</strong>
-            <div className="form-row">
+      {isAdminMode && (
+        <>
+          <section className="work-grid">
+            <form className="panel record-form" onSubmit={handleSubmit}>
+              <div className="section-heading">
+                <p>每日录入</p>
+                <h2>新增或修改一天的数据</h2>
+              </div>
               <label>
-                开始日期
+                日期
                 <input
                   type="date"
-                  value={deleteRange.startDate}
+                  value={form.date}
+                  onChange={(event) => setForm({ ...form, date: event.target.value })}
+                />
+              </label>
+              <div className="form-row">
+                <label>
+                  剪辑数量
+                  <input
+                    min="0"
+                    type="number"
+                    value={form.editCount}
+                    onChange={(event) =>
+                      setForm({ ...form, editCount: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  复杂片数量
+                  <input
+                    min="0"
+                    type="number"
+                    value={form.complexCount}
+                    onChange={(event) =>
+                      setForm({ ...form, complexCount: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <label>
+                备注
+                <textarea
+                  rows={4}
+                  placeholder="例如：广告短片、口播包装、修改返工..."
+                  value={form.note}
+                  onChange={(event) => setForm({ ...form, note: event.target.value })}
+                />
+              </label>
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={isSaving || !isGitHubReady}
+              >
+                {isSaving
+                  ? '同步中...'
+                  : isGitHubReady
+                    ? '保存今天的数据'
+                    : '填入令牌后才能保存'}
+              </button>
+            </form>
+
+            <section className="panel">
+              <div className="section-heading">
+                <p>GitHub 同步</p>
+                <h2>把数据写回仓库文件</h2>
+              </div>
+              <div className={`sync-state ${isGitHubReady ? 'ready' : 'locked'}`}>
+                <strong>{isGitHubReady ? '当前浏览器已连接，可保存数据' : '未连接令牌，只能查看公开数据'}</strong>
+                <span>
+                  {isGitHubReady
+                    ? '用户名、仓库名、分支和令牌都会记在这台设备的浏览器里。'
+                    : '公开访问者看得到页面，但没有你的令牌就不能写入仓库。'}
+                </span>
+              </div>
+              <div className="form-row">
+                <label>
+                  用户名
+                  <input
+                    placeholder="a2938145246-cpu"
+                    value={config.owner}
+                    onChange={(event) =>
+                      setConfig({ ...config, owner: event.target.value.trim() })
+                    }
+                  />
+                </label>
+                <label>
+                  仓库名
+                  <input
+                    placeholder="Miku-s-editing-data"
+                    value={config.repo}
+                    onChange={(event) =>
+                      setConfig({ ...config, repo: event.target.value.trim() })
+                    }
+                  />
+                </label>
+              </div>
+              <label>
+                分支
+                <input
+                  value={config.branch}
                   onChange={(event) =>
-                    setDeleteRange({
-                      ...deleteRange,
-                      startDate: event.target.value,
-                    })
+                    setConfig({ ...config, branch: event.target.value.trim() })
                   }
                 />
               </label>
               <label>
-                结束日期
+                令牌
                 <input
-                  type="date"
-                  value={deleteRange.endDate}
+                  type="password"
+                  placeholder="只保存在当前浏览器"
+                  value={config.token}
                   onChange={(event) =>
-                    setDeleteRange({
-                      ...deleteRange,
-                      endDate: event.target.value,
-                    })
+                    setConfig({ ...config, token: event.target.value.trim() })
                   }
                 />
               </label>
+              <div className="button-row">
+                <button type="button" onClick={saveConfig}>
+                  保存并记住设置
+                </button>
+                <button type="button" onClick={pullGitHubRecords} disabled={!isGitHubReady}>
+                  读取最新数据
+                </button>
+                <button type="button" onClick={clearConfig}>
+                  清除令牌
+                </button>
+              </div>
+              <p className="helper-text">
+                令牌需要仓库内容读取和写入权限。公开页面不会包含你的令牌，换手机或换浏览器时需要再填一次令牌。
+              </p>
+            </section>
+          </section>
+
+          <section className="panel import-panel">
+            <div className="section-heading">
+              <p>腾讯文档导入</p>
+              <h2>把以前的数据一次合并进来</h2>
             </div>
-            <div className="button-row">
-              <button
-                type="button"
-                disabled={!isGitHubReady || isSaving}
-                onClick={() => void deleteRecordsByRange()}
-              >
-                删除范围内数据
-              </button>
-              <button
-                disabled={!restorePoint || !isGitHubReady || isSaving}
-                type="button"
-                onClick={() => void undoLastDataChange()}
-              >
-                {restorePoint ? restorePoint.label : '暂无可撤销操作'}
-              </button>
+            <div className="import-box">
+              <label>
+                上传腾讯文档导出的表格
+                <input
+                  accept=".csv,.xlsx,.xls,.json,text/csv,application/json"
+                  disabled={!isGitHubReady || isSaving}
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) {
+                      void importRecordsFromFile(file)
+                    }
+                    event.target.value = ''
+                  }}
+                />
+              </label>
+              <p className="helper-text">
+                支持 CSV、XLSX、XLS 和 JSON。表头建议使用：日期、剪辑数量、复杂片数量、备注。导入时会按日期合并，同一天的新数据会覆盖旧数据。
+              </p>
             </div>
-          </div>
-          <div className="maintenance-box">
-            <strong>导出备份</strong>
-            <p className="helper-text">
-              上传 GitHub 前后都可以导出，建议导入大批量数据前先备份一次。
-            </p>
-            <div className="button-row">
-              <button type="button" onClick={() => exportRecords('json')}>
-                导出 JSON 备份
-              </button>
-              <button type="button" onClick={() => exportRecords('csv')}>
-                导出 CSV 表格
-              </button>
+          </section>
+
+          <section className="panel maintenance-panel">
+            <div className="section-heading">
+              <p>数据维护</p>
+              <h2>删错可撤回，重要数据可备份</h2>
             </div>
-          </div>
-        </div>
-      </section>
+            <div className="maintenance-grid">
+              <div className="maintenance-box">
+                <strong>按日期范围删除</strong>
+                <div className="form-row">
+                  <label>
+                    开始日期
+                    <input
+                      type="date"
+                      value={deleteRange.startDate}
+                      onChange={(event) =>
+                        setDeleteRange({
+                          ...deleteRange,
+                          startDate: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    结束日期
+                    <input
+                      type="date"
+                      value={deleteRange.endDate}
+                      onChange={(event) =>
+                        setDeleteRange({
+                          ...deleteRange,
+                          endDate: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    disabled={!isGitHubReady || isSaving}
+                    onClick={() => void deleteRecordsByRange()}
+                  >
+                    删除范围内数据
+                  </button>
+                  <button
+                    disabled={!restorePoint || !isGitHubReady || isSaving}
+                    type="button"
+                    onClick={() => void undoLastDataChange()}
+                  >
+                    {restorePoint ? restorePoint.label : '暂无可撤销操作'}
+                  </button>
+                </div>
+              </div>
+              <div className="maintenance-box">
+                <strong>导出备份</strong>
+                <p className="helper-text">
+                  上传 GitHub 前后都可以导出，建议导入大批量数据前先备份一次。
+                </p>
+                <div className="button-row">
+                  <button type="button" onClick={() => exportRecords('json')}>
+                    导出 JSON 备份
+                  </button>
+                  <button type="button" onClick={() => exportRecords('csv')}>
+                    导出 CSV 表格
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
 
       <section className="panel reports-panel">
         <div className="section-heading">
@@ -1581,9 +1593,11 @@ function App() {
                 <span>{record.editCount} 个</span>
                 <small>复杂 {record.complexCount}</small>
               </div>
-              <button type="button" onClick={() => editRecord(record)}>
-                编辑
-              </button>
+              {isAdminMode && (
+                <button type="button" onClick={() => editRecord(record)}>
+                  编辑
+                </button>
+              )}
             </article>
           ))}
           {filteredRecords.length === 0 && (

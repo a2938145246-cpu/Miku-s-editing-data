@@ -905,6 +905,10 @@ button:disabled {
   gap: 16px;
 }
 
+.public-goal-layout {
+  grid-template-columns: 1fr;
+}
+
 .goal-input-box {
   display: grid;
   align-content: start;
