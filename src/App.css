@@ -869,6 +869,32 @@ button:disabled {
   font-size: 14px;
 }
 
+.sync-state {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: #fff8dc;
+}
+
+.sync-state strong {
+  color: var(--ink);
+}
+
+.sync-state span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.sync-state.ready {
+  background: #eafff4;
+}
+
+.sync-state.locked {
+  background: #fff0ec;
+}
+
 .import-panel,
 .maintenance-panel,
 .reports-panel {

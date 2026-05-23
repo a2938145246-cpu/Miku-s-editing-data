@@ -41,8 +41,8 @@ const DATA_URL = `${import.meta.env.BASE_URL}data/editing-records.json`
 const REPORTS_URL = `${import.meta.env.BASE_URL}data/reports.json`
 const CONFIG_KEY = 'editing-stats-github-config'
 const emptyConfig: GitHubConfig = {
-  owner: '',
-  repo: '',
+  owner: 'a2938145246-cpu',
+  repo: 'Miku-s-editing-data',
   branch: 'main',
   token: '',
 }
@@ -129,7 +129,24 @@ function decodeBase64Utf8(value: string) {
 
 function readSavedConfig() {
   const savedConfig = localStorage.getItem(CONFIG_KEY)
-  return savedConfig ? (JSON.parse(savedConfig) as GitHubConfig) : emptyConfig
+  if (!savedConfig) {
+    return emptyConfig
+  }
+
+  try {
+    return { ...emptyConfig, ...(JSON.parse(savedConfig) as GitHubConfig) }
+  } catch {
+    return emptyConfig
+  }
+}
+
+function hasGitHubConfig(config: GitHubConfig) {
+  return Boolean(
+    config.owner.trim() &&
+      config.repo.trim() &&
+      config.branch.trim() &&
+      config.token.trim(),
+  )
 }
 
 async function fetchPublicRecords() {
@@ -189,19 +206,70 @@ function parseCsv(text: string) {
   return rows
 }
 
-function normalizeImportDate(value: string) {
-  const cleaned = value.trim().replace(/[年月]/g, '-').replace(/日/g, '')
-  const match = cleaned.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
-  if (!match) {
+function excelSerialToDateString(serial: number) {
+  if (!Number.isFinite(serial) || serial < 20000 || serial > 80000) {
     return ''
   }
+
+  const utcTime = Math.round((serial - 25569) * 86400 * 1000)
+  return getChinaDateString(new Date(utcTime))
+}
+
+function normalizeImportDate(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return getChinaDateString(value)
+  }
+
+  if (typeof value === 'number') {
+    return excelSerialToDateString(value)
+  }
+
+  const text = String(value ?? '').trim()
+  if (!text) {
+    return ''
+  }
+
+  const serial = Number(text)
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const serialDate = excelSerialToDateString(serial)
+    if (serialDate) {
+      return serialDate
+    }
+    if (/^\d{8}$/.test(text)) {
+      return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`
+    }
+  }
+
+  const cleaned = text
+    .replace(/[年月]/g, '-')
+    .replace(/日/g, '')
+    .replace(/\s+\d{1,2}:\d{2}(:\d{2})?.*$/, '')
+  let match = cleaned.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
+  if (!match) {
+    match = cleaned.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/)
+    if (match) {
+      const [, month, day, year] = match
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+    }
+  }
+  if (!match) {
+    match = cleaned.match(/^(\d{1,2})[-/.](\d{1,2})$/)
+    if (match) {
+      const [, month, day] = match
+      const year = getChinaDateString(new Date()).slice(0, 4)
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+    }
+    return ''
+  }
+
   const [, year, month, day] = match
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
 }
 
 function findColumn(headers: string[], candidates: string[]) {
-  return headers.findIndex((header) =>
-    candidates.some((candidate) => header.includes(candidate)),
+  const normalizedHeaders = headers.map((header) => header.trim().toLowerCase())
+  return normalizedHeaders.findIndex((header) =>
+    candidates.some((candidate) => header.includes(candidate.toLowerCase())),
   )
 }
 
@@ -210,41 +278,65 @@ function parseImportedRecords(text: string) {
   return parseImportedRows(rows)
 }
 
-function parseImportedRows(rows: string[][]) {
+function findHeaderInfo(rows: unknown[][]) {
+  for (let index = 0; index < Math.min(rows.length, 10); index += 1) {
+    const headers = rows[index].map((header) => String(header ?? '').trim())
+    const dateIndex = findColumn(headers, ['日期', '时间', '日子', 'date', 'day'])
+    const editIndex = findColumn(headers, [
+      '剪辑数量',
+      '剪辑数',
+      '剪辑',
+      '完成数量',
+      '数量',
+      'edit',
+      'count',
+      'total',
+    ])
+    if (dateIndex >= 0 && editIndex >= 0) {
+      return { hasHeader: true, headerRowIndex: index, headers, dateIndex, editIndex }
+    }
+  }
+
+  return {
+    hasHeader: false,
+    headerRowIndex: -1,
+    headers: [],
+    dateIndex: 0,
+    editIndex: 1,
+  }
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === 'number') {
+    return value
+  }
+  return Number(String(value ?? '').replace(/[^\d.]/g, '') || 0)
+}
+
+function parseImportedRows(rows: unknown[][]) {
   if (rows.length === 0) {
     return []
   }
 
-  const headers = rows[0].map((header) => header.trim())
-  const dateIndex = findColumn(headers, ['日期', '时间', '日子', 'date'])
-  const editIndex = findColumn(headers, [
-    '剪辑数量',
-    '剪辑数',
-    '剪辑',
-    '完成数量',
-    '数量',
-  ])
+  const headerInfo = findHeaderInfo(rows)
+  const { hasHeader, headers, dateIndex, editIndex } = headerInfo
   const complexIndex = findColumn(headers, ['复杂片数量', '复杂片', '复杂'])
   const noteIndex = findColumn(headers, ['备注', '说明', '内容', 'note'])
-  const hasHeader = dateIndex >= 0 && editIndex >= 0
-  const dataRows = hasHeader ? rows.slice(1) : rows
+  const dataRows = hasHeader ? rows.slice(headerInfo.headerRowIndex + 1) : rows
   const now = new Date().toISOString()
 
   return dataRows
     .map((row) => {
-      const date = normalizeImportDate(row[hasHeader ? dateIndex : 0] ?? '')
+      const date = normalizeImportDate(row[hasHeader ? dateIndex : 0])
       if (!date) {
         return null
       }
-      const editCount = Math.max(
-        0,
-        Number(String(row[hasHeader ? editIndex : 1] ?? '').replace(/[^\d.]/g, '') || 0),
-      )
+      const editCount = Math.max(0, toNumber(row[hasHeader ? editIndex : 1]))
       const complexCount = Math.max(
         0,
-        Number(String(row[hasHeader && complexIndex >= 0 ? complexIndex : 2] ?? '').replace(/[^\d.]/g, '') || 0),
+        toNumber(row[hasHeader && complexIndex >= 0 ? complexIndex : 2]),
       )
-      const note = row[hasHeader && noteIndex >= 0 ? noteIndex : 3] ?? ''
+      const note = String(row[hasHeader && noteIndex >= 0 ? noteIndex : 3] ?? '').trim()
 
       return {
         date,
@@ -267,16 +359,12 @@ async function parseXlsxFile(file: File) {
     firstSheet,
     {
       header: 1,
-      raw: false,
+      raw: true,
       dateNF: 'yyyy-mm-dd',
+      defval: '',
     },
   )
-  const rows = rawRows.map((row) =>
-    row.map((cell) =>
-      cell instanceof Date ? getChinaDateString(cell) : String(cell ?? '').trim(),
-    ),
-  )
-  return parseImportedRows(rows)
+  return parseImportedRows(rawRows)
 }
 
 async function fetchRecordsFromGitHub(config: GitHubConfig): Promise<GitHubFile> {
@@ -376,6 +464,7 @@ function App() {
   })
   const [status, setStatus] = useState('正在读取公开数据...')
   const [isSaving, setIsSaving] = useState(false)
+  const isGitHubReady = hasGitHubConfig(config)
 
   useEffect(() => {
     fetchPublicRecords()
@@ -386,6 +475,10 @@ function App() {
       .catch((error: Error) => setStatus(error.message))
     fetchReports().then(setReports)
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
+  }, [config])
 
   const today = getChinaDateString(new Date())
   const todayRecord = records.find((record) => record.date === today)
@@ -454,12 +547,37 @@ function App() {
     ),
   )
 
+  function requireGitHubConnection() {
+    if (isGitHubReady) {
+      return true
+    }
+
+    setStatus('请先在 GitHub 同步区域填好令牌。没有令牌的浏览器只能查看，不能保存或导入。')
+    return false
+  }
+
   function saveConfig() {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
-    setStatus('GitHub 设置已保存在当前浏览器')
+    setStatus(
+      isGitHubReady
+        ? 'GitHub 设置已保存在当前浏览器，下次打开会自动带出来'
+        : '已记住用户名、仓库名和分支；填入令牌后就可以保存数据',
+    )
+  }
+
+  function clearConfig() {
+    const nextConfig = { ...emptyConfig }
+    setConfig(nextConfig)
+    setFileSha(undefined)
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(nextConfig))
+    setStatus('已清除当前浏览器保存的令牌，页面现在只能查看数据')
   }
 
   async function pullGitHubRecords() {
+    if (!requireGitHubConnection()) {
+      return
+    }
+
     try {
       setStatus('正在从 GitHub 读取最新数据...')
       const githubFile = await fetchRecordsFromGitHub(config)
@@ -472,9 +590,8 @@ function App() {
   }
 
   async function syncRecordsToGitHub(nextRecords: EditingRecord[], successText: string) {
-    if (!config.owner || !config.repo || !config.branch || !config.token) {
-      setStatus('已在页面中更新，请补全 GitHub 设置后再同步到仓库')
-      return
+    if (!requireGitHubConnection()) {
+      return false
     }
 
     setIsSaving(true)
@@ -497,8 +614,10 @@ function App() {
       setRecords(mergedRecords)
       setFileSha(nextSha)
       setStatus(successText)
+      return true
     } catch (error) {
       setStatus((error as Error).message)
+      return false
     } finally {
       setIsSaving(false)
     }
@@ -508,9 +627,8 @@ function App() {
     nextRecords: EditingRecord[],
     successText: string,
   ) {
-    if (!config.owner || !config.repo || !config.branch || !config.token) {
-      setStatus('已在页面中更新，请补全 GitHub 设置后再同步到仓库')
-      return
+    if (!requireGitHubConnection()) {
+      return false
     }
 
     setIsSaving(true)
@@ -526,8 +644,10 @@ function App() {
       )
       setFileSha(nextSha)
       setStatus(successText)
+      return true
     } catch (error) {
       setStatus((error as Error).message)
+      return false
     } finally {
       setIsSaving(false)
     }
@@ -535,6 +655,9 @@ function App() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!requireGitHubConnection()) {
+      return
+    }
 
     const editCount = Math.max(0, Number(form.editCount))
     const complexCount = Math.max(0, Number(form.complexCount))
@@ -557,63 +680,72 @@ function App() {
       createdAt: existingRecord?.createdAt ?? now,
       updatedAt: now,
     }
-    const nextRecords = normalizeRecords([
-      ...records.filter((record) => record.date !== form.date),
-      nextRecord,
-    ])
-
-    setRecords(nextRecords)
-    await syncRecordsToGitHub(
+    const saved = await syncRecordsToGitHub(
       [nextRecord],
       '已保存到 GitHub，GitHub Pages 会稍后自动更新',
     )
-    if (config.owner && config.repo && config.branch && config.token) {
+    if (saved) {
       setForm({ ...defaultForm, date: form.date })
     }
   }
 
   async function importRecordsFromFile(file: File) {
-    const fileName = file.name.toLowerCase()
-    const importedRecords = fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
-      ? normalizeRecords(await parseXlsxFile(file))
-      : fileName.endsWith('.json')
-        ? normalizeRecords(
-            ((JSON.parse(await file.text()) as { records?: EditingRecord[] }).records ?? []).map(
-              (record) => ({
-                ...record,
-                complexCount: Math.min(record.complexCount, record.editCount),
-              }),
-            ),
-          )
-        : normalizeRecords(parseImportedRecords(await file.text()))
-
-    if (importedRecords.length === 0) {
-      setStatus('没有识别到可导入的数据，请确认表格里有日期和剪辑数量')
+    if (!requireGitHubConnection()) {
       return
     }
 
-    const mergedRecords = normalizeRecords([
-      ...records.filter(
-        (record) =>
-          !importedRecords.some(
-            (importedRecord) => importedRecord.date === record.date,
-          ),
-      ),
-      ...importedRecords,
-    ])
-    setRestorePoint({
-      label: `撤销导入 ${file.name}`,
-      records,
-    })
-    setRecords(mergedRecords)
-    setStatus(`已导入 ${importedRecords.length} 天数据，请同步到 GitHub 保存`)
-    await saveAllRecordsToGitHub(
-      mergedRecords,
-      `已导入并同步 ${importedRecords.length} 天数据`,
-    )
+    try {
+      const fileName = file.name.toLowerCase()
+      const importedRecords = fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
+        ? normalizeRecords(await parseXlsxFile(file))
+        : fileName.endsWith('.json')
+          ? normalizeRecords(
+              ((JSON.parse(await file.text()) as { records?: EditingRecord[] }).records ?? []).map(
+                (record) => ({
+                  ...record,
+                  complexCount: Math.min(record.complexCount, record.editCount),
+                }),
+              ),
+            )
+          : normalizeRecords(parseImportedRecords(await file.text()))
+
+      if (importedRecords.length === 0) {
+        setStatus('没有识别到可导入的数据，请确认表格里有日期和剪辑数量')
+        return
+      }
+
+      const mergedRecords = normalizeRecords([
+        ...records.filter(
+          (record) =>
+            !importedRecords.some(
+              (importedRecord) => importedRecord.date === record.date,
+            ),
+        ),
+        ...importedRecords,
+      ])
+      setRestorePoint({
+        label: `撤销导入 ${file.name}`,
+        records,
+      })
+      const saved = await saveAllRecordsToGitHub(
+        mergedRecords,
+        `已导入并同步 ${importedRecords.length} 天数据`,
+      )
+      if (saved) {
+        setRecords(mergedRecords)
+      }
+    } catch (error) {
+      setStatus(
+        `导入失败：${(error as Error).message || '文件格式没有识别出来，请确认是腾讯文档导出的表格'}`,
+      )
+    }
   }
 
   async function deleteRecordsByRange() {
+    if (!requireGitHubConnection()) {
+      return
+    }
+
     if (!deleteRange.startDate || !deleteRange.endDate) {
       setStatus('请选择要删除的开始日期和结束日期')
       return
@@ -648,22 +780,32 @@ function App() {
       label: `撤销删除 ${deleteRange.startDate} 到 ${deleteRange.endDate}`,
       records,
     })
-    setRecords(nextRecords)
-    await saveAllRecordsToGitHub(
+    const saved = await saveAllRecordsToGitHub(
       nextRecords,
       `已删除 ${matchedRecords.length} 天数据，并同步到 GitHub`,
     )
+    if (saved) {
+      setRecords(nextRecords)
+    }
   }
 
   async function undoLastDataChange() {
     if (!restorePoint) {
       return
     }
+    if (!requireGitHubConnection()) {
+      return
+    }
     const previousRecords = restorePoint.records
-    setRecords(previousRecords)
-    setStatus(`已${restorePoint.label}`)
-    setRestorePoint(null)
-    await saveAllRecordsToGitHub(previousRecords, '已撤销并同步到 GitHub')
+    const saved = await saveAllRecordsToGitHub(
+      previousRecords,
+      '已撤销并同步到 GitHub',
+    )
+    if (saved) {
+      setRecords(previousRecords)
+      setStatus(`已${restorePoint.label}`)
+      setRestorePoint(null)
+    }
   }
 
   function exportRecords(format: 'json' | 'csv') {
@@ -849,8 +991,16 @@ function App() {
               onChange={(event) => setForm({ ...form, note: event.target.value })}
             />
           </label>
-          <button className="primary-button" type="submit" disabled={isSaving}>
-            {isSaving ? '同步中...' : '保存今天的数据'}
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={isSaving || !isGitHubReady}
+          >
+            {isSaving
+              ? '同步中...'
+              : isGitHubReady
+                ? '保存今天的数据'
+                : '填入令牌后才能保存'}
           </button>
         </form>
 
@@ -859,11 +1009,19 @@ function App() {
             <p>GitHub 同步</p>
             <h2>把数据写回仓库文件</h2>
           </div>
+          <div className={`sync-state ${isGitHubReady ? 'ready' : 'locked'}`}>
+            <strong>{isGitHubReady ? '当前浏览器已连接，可保存数据' : '未连接令牌，只能查看公开数据'}</strong>
+            <span>
+              {isGitHubReady
+                ? '用户名、仓库名、分支和令牌都会记在这台设备的浏览器里。'
+                : '公开访问者看得到页面，但没有你的令牌就不能写入仓库。'}
+            </span>
+          </div>
           <div className="form-row">
             <label>
               用户名
               <input
-                placeholder="你的 GitHub 用户名"
+                placeholder="a2938145246-cpu"
                 value={config.owner}
                 onChange={(event) =>
                   setConfig({ ...config, owner: event.target.value.trim() })
@@ -873,7 +1031,7 @@ function App() {
             <label>
               仓库名
               <input
-                placeholder="personal-editing-stats"
+                placeholder="Miku-s-editing-data"
                 value={config.repo}
                 onChange={(event) =>
                   setConfig({ ...config, repo: event.target.value.trim() })
@@ -903,14 +1061,17 @@ function App() {
           </label>
           <div className="button-row">
             <button type="button" onClick={saveConfig}>
-              保存设置
+              保存并记住设置
             </button>
-            <button type="button" onClick={pullGitHubRecords}>
+            <button type="button" onClick={pullGitHubRecords} disabled={!isGitHubReady}>
               读取最新数据
+            </button>
+            <button type="button" onClick={clearConfig}>
+              清除令牌
             </button>
           </div>
           <p className="helper-text">
-            令牌需要仓库内容读取和写入权限。公开页面不会包含你的令牌。
+            令牌需要仓库内容读取和写入权限。公开页面不会包含你的令牌，换手机或换浏览器时需要再填一次令牌。
           </p>
         </section>
       </section>
@@ -922,9 +1083,10 @@ function App() {
         </div>
         <div className="import-box">
           <label>
-            上传腾讯文档导出的 CSV 表格
+            上传腾讯文档导出的表格
             <input
               accept=".csv,.xlsx,.xls,.json,text/csv,application/json"
+              disabled={!isGitHubReady || isSaving}
               type="file"
               onChange={(event) => {
                 const file = event.target.files?.[0]
@@ -936,7 +1098,7 @@ function App() {
             />
           </label>
           <p className="helper-text">
-            支持 CSV、XLSX 和 JSON。表头建议使用：日期、剪辑数量、复杂片数量、备注。导入时会按日期合并，同一天的新数据会覆盖旧数据。
+            支持 CSV、XLSX、XLS 和 JSON。表头建议使用：日期、剪辑数量、复杂片数量、备注。导入时会按日期合并，同一天的新数据会覆盖旧数据。
           </p>
         </div>
       </section>
@@ -978,11 +1140,15 @@ function App() {
               </label>
             </div>
             <div className="button-row">
-              <button type="button" onClick={() => void deleteRecordsByRange()}>
+              <button
+                type="button"
+                disabled={!isGitHubReady || isSaving}
+                onClick={() => void deleteRecordsByRange()}
+              >
                 删除范围内数据
               </button>
               <button
-                disabled={!restorePoint}
+                disabled={!restorePoint || !isGitHubReady || isSaving}
                 type="button"
                 onClick={() => void undoLastDataChange()}
               >
