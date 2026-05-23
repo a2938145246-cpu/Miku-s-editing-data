@@ -617,7 +617,12 @@ function App() {
   )
   const yearRecords = records.filter((record) => record.date.startsWith(currentYear))
   const monthTotals = getTotals(monthRecords)
-  const currentMonthGoal = monthlyGoals[currentMonth] ?? 0
+  const savedMonthGoal = monthlyGoals[currentMonth] ?? 0
+  const draftMonthGoal = Math.max(0, Number(monthlyGoalDraft || 0))
+  const currentMonthGoal = Number.isFinite(draftMonthGoal)
+    ? draftMonthGoal
+    : savedMonthGoal
+  const isGoalDraftSaved = currentMonthGoal === savedMonthGoal
   const monthWorkingDays = getWorkingDaysInMonth(currentMonth)
   const remainingWorkingDays = getRemainingWorkingDays(currentMonth, today)
   const remainingToGoal = Math.max(currentMonthGoal - monthTotals.editCount, 0)
@@ -1209,6 +1214,9 @@ function App() {
                 已完成 {monthTotals.editCount} / {currentMonthGoal || 0} 条
               </span>
             </div>
+            {!isGoalDraftSaved && (
+              <p className="goal-draft-note">正在预览新目标，保存后会同步到手机和电脑。</p>
+            )}
             <div className="goal-bar" aria-hidden="true">
               <span style={{ width: `${monthlyProgress}%` }}></span>
             </div>
