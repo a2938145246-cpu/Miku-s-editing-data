@@ -1881,5 +1881,7 @@
       "updatedAt": "2026-05-23T13:11:56.425Z"
     }
   ],
-  "monthlyGoals": {}
+  "monthlyGoals": {
+    "2026-05": 105
+  }
 }
