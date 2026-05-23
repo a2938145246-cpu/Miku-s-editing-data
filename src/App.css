@@ -1003,7 +1003,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 14px;
-  align-items: center;
+  align-items: start;
   padding: 14px;
   border: 1px solid rgba(33, 37, 41, 0.22);
   border-radius: 8px;
@@ -1014,10 +1014,36 @@ button:disabled {
   color: var(--ink);
 }
 
+.record-row strong small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .record-row p {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 14px;
+}
+
+.video-name-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.video-name-list li {
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid rgba(33, 37, 41, 0.18);
+  border-radius: 8px;
+  background: #f6fbff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .record-numbers {

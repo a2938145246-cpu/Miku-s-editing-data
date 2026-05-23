@@ -7,6 +7,8 @@ type EditingRecord = {
   editCount: number
   complexCount: number
   note: string
+  videoNames?: string[]
+  editor?: string
   createdAt: string
   updatedAt: string
 }
@@ -288,6 +290,8 @@ function findHeaderInfo(rows: unknown[][]) {
       '剪辑',
       '完成数量',
       '数量',
+      '条数',
+      '完成条数',
       'edit',
       'count',
       'total',
@@ -313,6 +317,47 @@ function toNumber(value: unknown) {
   return Number(String(value ?? '').replace(/[^\d.]/g, '') || 0)
 }
 
+function splitVideoNames(value: unknown) {
+  return String(value ?? '')
+    .split(/[/\n；;、]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function getVideoNameIndexes(
+  row: unknown[],
+  headerInfo: ReturnType<typeof findHeaderInfo>,
+  complexIndex: number,
+  noteIndex: number,
+) {
+  if (headerInfo.hasHeader) {
+    const firstVideoIndex = Math.max(headerInfo.dateIndex, headerInfo.editIndex) + 1
+    if (complexIndex < 0 && noteIndex < 0) {
+      return row.map((_, index) => index).filter((index) => index >= firstVideoIndex)
+    }
+
+    const taggedIndexes = headerInfo.headers
+      .map((header, index) => ({ header, index }))
+      .filter(({ header }) => /视频|片名|片子|作品|名称|选题|内容/i.test(header))
+      .map(({ index }) => index)
+
+    if (taggedIndexes.length > 0) {
+      return taggedIndexes
+    }
+
+    return row
+      .map((_, index) => index)
+      .filter(
+        (index) =>
+          index >= firstVideoIndex &&
+          index !== complexIndex &&
+          index !== noteIndex,
+      )
+  }
+
+  return row.map((_, index) => index).filter((index) => index >= 3)
+}
+
 function parseImportedRows(rows: unknown[][]) {
   if (rows.length === 0) {
     return []
@@ -322,11 +367,12 @@ function parseImportedRows(rows: unknown[][]) {
   const { hasHeader, headers, dateIndex, editIndex } = headerInfo
   const complexIndex = findColumn(headers, ['复杂片数量', '复杂片', '复杂'])
   const noteIndex = findColumn(headers, ['备注', '说明', '内容', 'note'])
+  const editorIndex = findColumn(headers, ['剪辑人员', '剪辑师', '人员', 'editor'])
   const dataRows = hasHeader ? rows.slice(headerInfo.headerRowIndex + 1) : rows
   const now = new Date().toISOString()
 
   return dataRows
-    .map((row) => {
+    .map((row): EditingRecord | null => {
       const date = normalizeImportDate(row[hasHeader ? dateIndex : 0])
       if (!date) {
         return null
@@ -336,13 +382,26 @@ function parseImportedRows(rows: unknown[][]) {
         0,
         toNumber(row[hasHeader && complexIndex >= 0 ? complexIndex : 2]),
       )
-      const note = String(row[hasHeader && noteIndex >= 0 ? noteIndex : 3] ?? '').trim()
+      const videoNameIndexes = getVideoNameIndexes(
+        row,
+        headerInfo,
+        complexIndex,
+        noteIndex,
+      )
+      const videoNames = videoNameIndexes.flatMap((index) =>
+        splitVideoNames(row[index]),
+      )
+      const note = String(
+        row[hasHeader && noteIndex >= 0 ? noteIndex : 3] ?? '',
+      ).trim()
 
       return {
         date,
         editCount,
-        complexCount: Math.min(complexCount, editCount),
+        complexCount: hasHeader && complexIndex < 0 ? 0 : Math.min(complexCount, editCount),
         note,
+        videoNames,
+        editor: String(row[hasHeader && editorIndex >= 0 ? editorIndex : 0] ?? '').trim(),
         createdAt: now,
         updatedAt: now,
       }
@@ -526,6 +585,10 @@ function App() {
       const keywordMatched =
         filters.keyword.trim().length === 0 ||
         record.note.includes(filters.keyword.trim()) ||
+        (record.editor ?? '').includes(filters.keyword.trim()) ||
+        (record.videoNames ?? []).some((name) =>
+          name.includes(filters.keyword.trim()),
+        ) ||
         record.date.includes(filters.keyword.trim())
       const startMatched =
         filters.startDate.length === 0 || record.date >= filters.startDate
@@ -677,6 +740,8 @@ function App() {
       editCount,
       complexCount,
       note: form.note.trim(),
+      videoNames: existingRecord?.videoNames,
+      editor: existingRecord?.editor,
       createdAt: existingRecord?.createdAt ?? now,
       updatedAt: now,
     }
@@ -704,6 +769,7 @@ function App() {
                 (record) => ({
                   ...record,
                   complexCount: Math.min(record.complexCount, record.editCount),
+                  videoNames: record.videoNames ?? [],
                 }),
               ),
             )
@@ -821,7 +887,16 @@ function App() {
     }
 
     const csv = [
-      ['日期', '剪辑数量', '复杂片数量', '备注', '创建时间', '更新时间'],
+      [
+        '日期',
+        '剪辑数量',
+        '复杂片数量',
+        '备注',
+        '片名列表',
+        '剪辑人员',
+        '创建时间',
+        '更新时间',
+      ],
       ...normalizeRecords(records)
         .reverse()
         .map((record) => [
@@ -829,6 +904,8 @@ function App() {
           record.editCount,
           record.complexCount,
           record.note,
+          (record.videoNames ?? []).join(' / '),
+          record.editor ?? '',
           record.createdAt,
           record.updatedAt,
         ]),
@@ -1262,8 +1339,23 @@ function App() {
           {filteredRecords.map((record) => (
             <article className="record-row" key={record.date}>
               <div>
-                <strong>{record.date}</strong>
-                <p>{record.note || '没有备注'}</p>
+                <strong>
+                  {record.date}
+                  {record.editor ? <small> · {record.editor}</small> : null}
+                </strong>
+                <p>
+                  {record.note ||
+                    ((record.videoNames?.length ?? 0) > 0
+                      ? `已列出 ${record.videoNames?.length ?? 0} 个片名`
+                      : '没有备注')}
+                </p>
+                {(record.videoNames?.length ?? 0) > 0 && (
+                  <ul className="video-name-list">
+                    {record.videoNames?.map((name, index) => (
+                      <li key={`${record.date}-${name}-${index}`}>{name}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div className="record-numbers">
                 <span>{record.editCount} 个</span>
