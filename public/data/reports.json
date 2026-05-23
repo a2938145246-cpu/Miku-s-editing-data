@@ -5,11 +5,11 @@
       "title": "月总结 2026-05",
       "period": "2026-05",
       "editCount": 83,
-      "complexCount": 0,
+      "complexCount": 30,
       "activeDays": 19,
       "averagePerActiveDay": 4.4,
-      "ratio": 0,
-      "generatedAt": "2026-05-23T12:53:10.296Z",
+      "ratio": 36,
+      "generatedAt": "2026-05-23T13:13:26.378Z",
       "path": "reports/monthly-2026-05.md"
     },
     {
@@ -17,11 +17,11 @@
       "title": "周总结 2026-05-18 至 2026-05-24",
       "period": "2026-05-18 至 2026-05-24",
       "editCount": 23,
-      "complexCount": 0,
+      "complexCount": 8,
       "activeDays": 5,
       "averagePerActiveDay": 4.6,
-      "ratio": 0,
-      "generatedAt": "2026-05-23T12:53:10.227Z",
+      "ratio": 35,
+      "generatedAt": "2026-05-23T13:13:26.237Z",
       "path": "reports/weekly-2026-05-18.md"
     }
   ]

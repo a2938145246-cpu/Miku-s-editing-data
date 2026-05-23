@@ -8,6 +8,7 @@ type EditingRecord = {
   complexCount: number
   note: string
   videoNames?: string[]
+  complexVideoNames?: string[]
   editor?: string
   createdAt: string
   updatedAt: string
@@ -358,6 +359,15 @@ function getVideoNameIndexes(
   return row.map((_, index) => index).filter((index) => index >= 3)
 }
 
+function getComplexVideoNameIndexes(
+  row: unknown[],
+  headerInfo: ReturnType<typeof findHeaderInfo>,
+) {
+  const firstVideoIndex = Math.max(headerInfo.dateIndex, headerInfo.editIndex) + 1
+  const templateMiddleIndex = firstVideoIndex + 1
+  return templateMiddleIndex < row.length ? [templateMiddleIndex] : []
+}
+
 function parseImportedRows(rows: unknown[][]) {
   if (rows.length === 0) {
     return []
@@ -391,6 +401,12 @@ function parseImportedRows(rows: unknown[][]) {
       const videoNames = videoNameIndexes.flatMap((index) =>
         splitVideoNames(row[index]),
       )
+      const complexVideoNames =
+        hasHeader && complexIndex < 0
+          ? getComplexVideoNameIndexes(row, headerInfo).flatMap((index) =>
+              splitVideoNames(row[index]),
+            )
+          : []
       const note = String(
         row[hasHeader && noteIndex >= 0 ? noteIndex : 3] ?? '',
       ).trim()
@@ -398,9 +414,13 @@ function parseImportedRows(rows: unknown[][]) {
       return {
         date,
         editCount,
-        complexCount: hasHeader && complexIndex < 0 ? 0 : Math.min(complexCount, editCount),
+        complexCount:
+          hasHeader && complexIndex < 0
+            ? Math.min(complexVideoNames.length, editCount)
+            : Math.min(complexCount, editCount),
         note,
         videoNames,
+        complexVideoNames,
         editor: String(row[hasHeader && editorIndex >= 0 ? editorIndex : 0] ?? '').trim(),
         createdAt: now,
         updatedAt: now,
@@ -741,6 +761,7 @@ function App() {
       complexCount,
       note: form.note.trim(),
       videoNames: existingRecord?.videoNames,
+      complexVideoNames: existingRecord?.complexVideoNames,
       editor: existingRecord?.editor,
       createdAt: existingRecord?.createdAt ?? now,
       updatedAt: now,
@@ -770,6 +791,7 @@ function App() {
                   ...record,
                   complexCount: Math.min(record.complexCount, record.editCount),
                   videoNames: record.videoNames ?? [],
+                  complexVideoNames: record.complexVideoNames ?? [],
                 }),
               ),
             )
@@ -893,6 +915,7 @@ function App() {
         '复杂片数量',
         '备注',
         '片名列表',
+        '复杂片名列表',
         '剪辑人员',
         '创建时间',
         '更新时间',
@@ -905,6 +928,7 @@ function App() {
           record.complexCount,
           record.note,
           (record.videoNames ?? []).join(' / '),
+          (record.complexVideoNames ?? []).join(' / '),
           record.editor ?? '',
           record.createdAt,
           record.updatedAt,
@@ -1351,9 +1375,17 @@ function App() {
                 </p>
                 {(record.videoNames?.length ?? 0) > 0 && (
                   <ul className="video-name-list">
-                    {record.videoNames?.map((name, index) => (
-                      <li key={`${record.date}-${name}-${index}`}>{name}</li>
-                    ))}
+                    {record.videoNames?.map((name, index) => {
+                      const isComplex = (record.complexVideoNames ?? []).includes(name)
+                      return (
+                        <li
+                          className={isComplex ? 'complex-video-name' : undefined}
+                          key={`${record.date}-${name}-${index}`}
+                        >
+                          {name}
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
               </div>

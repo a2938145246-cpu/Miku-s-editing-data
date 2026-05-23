@@ -1046,6 +1046,12 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.video-name-list li.complex-video-name {
+  border-color: rgba(255, 125, 97, 0.55);
+  background: #fff0ec;
+  color: #d3422f;
+}
+
 .record-numbers {
   display: grid;
   gap: 2px;
