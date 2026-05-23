@@ -895,6 +895,85 @@ button:disabled {
   background: #fff0ec;
 }
 
+.monthly-goal-panel {
+  margin-top: 18px;
+}
+
+.goal-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.36fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.goal-input-box {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px dashed var(--ink);
+  border-radius: 8px;
+  background: #fff8dc;
+}
+
+.goal-progress-box {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(33, 37, 41, 0.22);
+  border-radius: 8px;
+  background: #f6fbff;
+}
+
+.goal-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.goal-progress-head strong {
+  color: var(--ink);
+  font-size: 36px;
+  line-height: 1;
+}
+
+.goal-progress-head span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.goal-bar {
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.goal-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--mint), var(--blue));
+}
+
+.goal-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.goal-stats span {
+  padding: 9px 10px;
+  border: 1px solid rgba(33, 37, 41, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .import-panel,
 .maintenance-panel,
 .reports-panel {
@@ -1098,6 +1177,11 @@ button:disabled {
   }
 
   .maintenance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .goal-layout,
+  .goal-stats {
     grid-template-columns: 1fr;
   }
 

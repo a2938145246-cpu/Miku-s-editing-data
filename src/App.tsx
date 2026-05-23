@@ -23,6 +23,7 @@ type GitHubConfig = {
 
 type GitHubFile = {
   records: EditingRecord[]
+  monthlyGoals: Record<string, number>
   sha?: string
 }
 
@@ -85,6 +86,30 @@ function getWeekStart(date: string) {
 
 function getMonthKey(date: string) {
   return date.slice(0, 7)
+}
+
+function getMonthEnd(monthKey: string) {
+  const [year, month] = monthKey.split('-').map(Number)
+  return getChinaDateString(new Date(year, month, 0, 12))
+}
+
+function getWorkingDaysInMonth(monthKey: string) {
+  const endDate = getMonthEnd(monthKey)
+  const days = Number(endDate.slice(8, 10))
+  return Array.from({ length: days }, (_, index) => {
+    const date = `${monthKey}-${String(index + 1).padStart(2, '0')}`
+    return parseDate(date).getDay() !== 1
+  }).filter(Boolean).length
+}
+
+function getRemainingWorkingDays(monthKey: string, today: string) {
+  const monthEnd = getMonthEnd(monthKey)
+  const startDay = today.startsWith(monthKey) ? Number(today.slice(8, 10)) : 1
+  const endDay = Number(monthEnd.slice(8, 10))
+  return Array.from({ length: endDay - startDay + 1 }, (_, index) => {
+    const date = `${monthKey}-${String(startDay + index).padStart(2, '0')}`
+    return parseDate(date).getDay() !== 1
+  }).filter(Boolean).length
 }
 
 function getWeekEnd(date: string) {
@@ -157,8 +182,14 @@ async function fetchPublicRecords() {
   if (!response.ok) {
     throw new Error('没有读取到公开数据文件')
   }
-  const payload = (await response.json()) as { records?: EditingRecord[] }
-  return normalizeRecords(payload.records ?? [])
+  const payload = (await response.json()) as {
+    records?: EditingRecord[]
+    monthlyGoals?: Record<string, number>
+  }
+  return {
+    records: normalizeRecords(payload.records ?? []),
+    monthlyGoals: payload.monthlyGoals ?? {},
+  }
 }
 
 async function fetchReports() {
@@ -464,10 +495,12 @@ async function fetchRecordsFromGitHub(config: GitHubConfig): Promise<GitHubFile>
   const payload = (await response.json()) as { content: string; sha: string }
   const data = JSON.parse(decodeBase64Utf8(payload.content)) as {
     records?: EditingRecord[]
+    monthlyGoals?: Record<string, number>
   }
 
   return {
     records: normalizeRecords(data.records ?? []),
+    monthlyGoals: data.monthlyGoals ?? {},
     sha: payload.sha,
   }
 }
@@ -475,9 +508,14 @@ async function fetchRecordsFromGitHub(config: GitHubConfig): Promise<GitHubFile>
 async function saveRecordsToGitHub(
   config: GitHubConfig,
   records: EditingRecord[],
+  monthlyGoals: Record<string, number>,
   sha?: string,
 ) {
-  const content = `${JSON.stringify({ records: normalizeRecords(records) }, null, 2)}\n`
+  const content = `${JSON.stringify(
+    { records: normalizeRecords(records), monthlyGoals },
+    null,
+    2,
+  )}\n`
   const response = await fetch(
     `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${DATA_PATH}`,
     {
@@ -523,6 +561,8 @@ function csvEscape(value: string | number) {
 
 function App() {
   const [records, setRecords] = useState<EditingRecord[]>([])
+  const [monthlyGoals, setMonthlyGoals] = useState<Record<string, number>>({})
+  const [monthlyGoalDraft, setMonthlyGoalDraft] = useState('')
   const [form, setForm] = useState(defaultForm)
   const [filters, setFilters] = useState({
     keyword: '',
@@ -547,9 +587,13 @@ function App() {
 
   useEffect(() => {
     fetchPublicRecords()
-      .then((loadedRecords) => {
-        setRecords(loadedRecords)
-        setStatus(`已读取 ${loadedRecords.length} 条记录`)
+      .then((loadedData) => {
+        setRecords(loadedData.records)
+        setMonthlyGoals(loadedData.monthlyGoals)
+        setMonthlyGoalDraft(
+          String(loadedData.monthlyGoals[getMonthKey(getChinaDateString(new Date()))] ?? ''),
+        )
+        setStatus(`已读取 ${loadedData.records.length} 条记录`)
       })
       .catch((error: Error) => setStatus(error.message))
     fetchReports().then(setReports)
@@ -572,6 +616,23 @@ function App() {
     (record) => getMonthKey(record.date) === currentMonth,
   )
   const yearRecords = records.filter((record) => record.date.startsWith(currentYear))
+  const monthTotals = getTotals(monthRecords)
+  const currentMonthGoal = monthlyGoals[currentMonth] ?? 0
+  const monthWorkingDays = getWorkingDaysInMonth(currentMonth)
+  const remainingWorkingDays = getRemainingWorkingDays(currentMonth, today)
+  const remainingToGoal = Math.max(currentMonthGoal - monthTotals.editCount, 0)
+  const monthlyProgress =
+    currentMonthGoal > 0
+      ? Math.min(100, Math.round((monthTotals.editCount / currentMonthGoal) * 100))
+      : 0
+  const monthlyDailyTarget =
+    currentMonthGoal > 0 && monthWorkingDays > 0
+      ? Math.round((currentMonthGoal / monthWorkingDays) * 10) / 10
+      : 0
+  const remainingDailyTarget =
+    remainingToGoal > 0 && remainingWorkingDays > 0
+      ? Math.round((remainingToGoal / remainingWorkingDays) * 10) / 10
+      : 0
 
   const summary = [
     {
@@ -588,8 +649,8 @@ function App() {
     },
     {
       label: '本月剪辑',
-      value: getTotals(monthRecords).editCount,
-      sub: `复杂片 ${getTotals(monthRecords).complexCount} 个`,
+      value: monthTotals.editCount,
+      sub: `复杂片 ${monthTotals.complexCount} 个`,
       tone: 'coral',
     },
     {
@@ -665,6 +726,8 @@ function App() {
       setStatus('正在从 GitHub 读取最新数据...')
       const githubFile = await fetchRecordsFromGitHub(config)
       setRecords(githubFile.records)
+      setMonthlyGoals(githubFile.monthlyGoals)
+      setMonthlyGoalDraft(String(githubFile.monthlyGoals[currentMonth] ?? ''))
       setFileSha(githubFile.sha)
       setStatus(`已从 GitHub 读取 ${githubFile.records.length} 条记录`)
     } catch (error) {
@@ -681,8 +744,12 @@ function App() {
     setStatus('正在保存到 GitHub...')
     try {
       const latestFile = fileSha
-        ? { records, sha: fileSha }
+        ? { records, monthlyGoals, sha: fileSha }
         : await fetchRecordsFromGitHub(config)
+      const mergedGoals = {
+        ...latestFile.monthlyGoals,
+        ...monthlyGoals,
+      }
       const mergedRecords = normalizeRecords([
         ...latestFile.records.filter(
           (record) => !nextRecords.some((nextRecord) => nextRecord.date === record.date),
@@ -692,9 +759,11 @@ function App() {
       const nextSha = await saveRecordsToGitHub(
         config,
         mergedRecords,
+        mergedGoals,
         latestFile.sha,
       )
       setRecords(mergedRecords)
+      setMonthlyGoals(mergedGoals)
       setFileSha(nextSha)
       setStatus(successText)
       return true
@@ -718,19 +787,78 @@ function App() {
     setStatus('正在保存到 GitHub...')
     try {
       const latestFile = fileSha
-        ? { sha: fileSha }
+        ? { monthlyGoals, sha: fileSha }
         : await fetchRecordsFromGitHub(config)
+      const mergedGoals = {
+        ...latestFile.monthlyGoals,
+        ...monthlyGoals,
+      }
       const nextSha = await saveRecordsToGitHub(
         config,
         normalizeRecords(nextRecords),
+        mergedGoals,
         latestFile.sha,
       )
+      setMonthlyGoals(mergedGoals)
       setFileSha(nextSha)
       setStatus(successText)
       return true
     } catch (error) {
       setStatus((error as Error).message)
       return false
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function saveMonthlyGoal() {
+    if (!requireGitHubConnection()) {
+      return
+    }
+
+    const trimmedGoal = monthlyGoalDraft.trim()
+    const nextGoal = Math.max(0, Number(trimmedGoal || 0))
+    if (!Number.isFinite(nextGoal)) {
+      setStatus('请输入有效的月目标数字')
+      return
+    }
+
+    const nextGoals = { ...monthlyGoals }
+    if (trimmedGoal.length === 0 || nextGoal === 0) {
+      delete nextGoals[currentMonth]
+    } else {
+      nextGoals[currentMonth] = Math.round(nextGoal)
+    }
+
+    setIsSaving(true)
+    setStatus('正在保存月目标...')
+    try {
+      const latestFile = fileSha
+        ? { records, monthlyGoals, sha: fileSha }
+        : await fetchRecordsFromGitHub(config)
+      const mergedGoals = {
+        ...latestFile.monthlyGoals,
+        ...nextGoals,
+      }
+      if (trimmedGoal.length === 0 || nextGoal === 0) {
+        delete mergedGoals[currentMonth]
+      }
+      const nextSha = await saveRecordsToGitHub(
+        config,
+        normalizeRecords(latestFile.records),
+        mergedGoals,
+        latestFile.sha,
+      )
+      setRecords(normalizeRecords(latestFile.records))
+      setMonthlyGoals(mergedGoals)
+      setFileSha(nextSha)
+      setStatus(
+        mergedGoals[currentMonth]
+          ? `已保存 ${currentMonth} 月目标：${mergedGoals[currentMonth]} 条`
+          : `已清空 ${currentMonth} 月目标`,
+      )
+    } catch (error) {
+      setStatus((error as Error).message)
     } finally {
       setIsSaving(false)
     }
@@ -901,7 +1029,11 @@ function App() {
     if (format === 'json') {
       createDownload(
         `剪辑数据备份-${fileDate}.json`,
-        `${JSON.stringify({ records: normalizeRecords(records) }, null, 2)}\n`,
+        `${JSON.stringify(
+          { records: normalizeRecords(records), monthlyGoals },
+          null,
+          2,
+        )}\n`,
         'application/json;charset=utf-8',
       )
       setStatus('已导出 JSON 备份')
@@ -1043,6 +1175,54 @@ function App() {
             <span>复杂片</span>
           </div>
         </aside>
+      </section>
+
+      <section className="panel monthly-goal-panel" aria-label="月目标进度">
+        <div className="section-heading">
+          <p>月目标</p>
+          <h2>{currentMonth} 剪辑目标</h2>
+        </div>
+        <div className="goal-layout">
+          <div className="goal-input-box">
+            <label>
+              本月目标条数
+              <input
+                min="0"
+                type="number"
+                placeholder="例如：120"
+                value={monthlyGoalDraft}
+                onChange={(event) => setMonthlyGoalDraft(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={isSaving || !isGitHubReady}
+              onClick={() => void saveMonthlyGoal()}
+            >
+              保存月目标
+            </button>
+          </div>
+          <div className="goal-progress-box">
+            <div className="goal-progress-head">
+              <strong>{monthlyProgress}%</strong>
+              <span>
+                已完成 {monthTotals.editCount} / {currentMonthGoal || 0} 条
+              </span>
+            </div>
+            <div className="goal-bar" aria-hidden="true">
+              <span style={{ width: `${monthlyProgress}%` }}></span>
+            </div>
+            <div className="goal-stats">
+              <span>还差 {remainingToGoal} 条</span>
+              <span>本月工作日 {monthWorkingDays} 天</span>
+              <span>日均目标 {monthlyDailyTarget} 条</span>
+              <span>剩余日均 {remainingDailyTarget} 条</span>
+            </div>
+          </div>
+        </div>
+        <p className="helper-text">
+          计算时自动排除每周一休息日；“剩余日均”按今天到月底剩余工作日计算。
+        </p>
       </section>
 
       <section className="work-grid">
