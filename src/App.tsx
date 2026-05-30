@@ -634,8 +634,9 @@ function App() {
   const remainingToGoal = Math.max(currentMonthGoal - monthTotals.editCount, 0)
   const monthlyProgress =
     currentMonthGoal > 0
-      ? Math.min(100, Math.round((monthTotals.editCount / currentMonthGoal) * 100))
+      ? Math.round((monthTotals.editCount / currentMonthGoal) * 100)
       : 0
+  const monthlyProgressBarWidth = Math.min(monthlyProgress, 100)
   const monthlyDailyTarget =
     currentMonthGoal > 0 && monthWorkingDays > 0
       ? Math.round((currentMonthGoal / monthWorkingDays) * 10) / 10
@@ -1226,7 +1227,7 @@ function App() {
               <p className="goal-draft-note">正在预览新目标，保存后会同步到手机和电脑。</p>
             )}
             <div className="goal-bar" aria-hidden="true">
-              <span style={{ width: `${monthlyProgress}%` }}></span>
+              <span style={{ width: `${monthlyProgressBarWidth}%` }}></span>
             </div>
             <div className="goal-stats">
               <span>还差 {remainingToGoal} 条</span>
