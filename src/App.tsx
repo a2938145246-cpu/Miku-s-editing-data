@@ -1486,15 +1486,19 @@ function App() {
             <span>{currentWeek} 至 {getWeekEnd(today)}</span>
             <p>剪辑 {getTotals(weekRecords).editCount} 个，复杂片 {getTotals(weekRecords).complexCount} 个，活跃日均 {getTotals(weekRecords).averagePerActiveDay} 个。</p>
           </article>
-          <article className="report-card">
+          <a className="report-card" href={`${import.meta.env.BASE_URL}reports/monthly.html`}>
             <strong>本月总结</strong>
             <span>{currentMonth}</span>
-            <p>剪辑 {getTotals(monthRecords).editCount} 个，复杂片 {getTotals(monthRecords).complexCount} 个，活跃日均 {getTotals(monthRecords).averagePerActiveDay} 个。</p>
-          </article>
+            <p>打开高级可视化月报，实时读取最新数据，旁边带每日柱状统计图。</p>
+          </a>
           {reports.slice(0, 4).map((report) => (
             <a
               className="report-card"
-              href={`${import.meta.env.BASE_URL}${report.path}`}
+              href={
+                report.type === 'monthly'
+                  ? `${import.meta.env.BASE_URL}reports/monthly.html?month=${report.period}`
+                  : `${import.meta.env.BASE_URL}${report.path}`
+              }
               key={report.path}
             >
               <strong>{report.title}</strong>

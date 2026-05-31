@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Miku 剪辑月度总结</title>
+    <link rel="stylesheet" href="./monthly-report.css" />
+  </head>
+  <body>
+    <main class="report-shell">
+      <header class="report-header">
+        <div>
+          <p class="eyebrow">Miku Editing Report</p>
+          <h1>剪辑数据月度情况分析</h1>
+        </div>
+        <nav class="report-nav" aria-label="报告导航">
+          <a href="../">返回首页</a>
+          <button id="refreshButton" type="button">刷新数据</button>
+        </nav>
+      </header>
+
+      <section class="hero-grid" aria-label="月度总览">
+        <aside class="metric-stack">
+          <article class="metric-card primary">
+            <span class="metric-icon">剪</span>
+            <div>
+              <p>本月剪辑总数</p>
+              <strong id="totalEdits">0</strong>
+              <small id="totalTrend">实时读取最新数据</small>
+            </div>
+          </article>
+          <article class="metric-card mid">
+            <span class="metric-icon">复</span>
+            <div>
+              <p>复杂片数量</p>
+              <strong id="complexTotal">0</strong>
+              <small id="complexRatio">复杂片占比 0%</small>
+            </div>
+          </article>
+          <article class="metric-card accent">
+            <span class="metric-icon">%</span>
+            <div>
+              <p>月目标进度</p>
+              <strong id="goalProgress">0%</strong>
+              <small id="goalText">未设置本月目标</small>
+            </div>
+          </article>
+        </aside>
+
+        <section class="analysis-board">
+          <div class="board-title">
+            <div>
+              <p id="monthLabel">本月实时总结</p>
+              <h2 id="reportTitle">加载中...</h2>
+            </div>
+            <span id="updatedAt">正在读取数据</span>
+          </div>
+
+          <div class="summary-strip">
+            <div>
+              <span>记录天数</span>
+              <strong id="recordDays">0</strong>
+            </div>
+            <div>
+              <span>活跃天数</span>
+              <strong id="activeDays">0</strong>
+            </div>
+            <div>
+              <span>活跃日均</span>
+              <strong id="dailyAverage">0</strong>
+            </div>
+            <div>
+              <span>最高产出日</span>
+              <strong id="bestDay">-</strong>
+            </div>
+          </div>
+
+          <div class="content-grid">
+            <section class="table-panel" aria-label="月度明细">
+              <div class="panel-heading">
+                <p>Daily Detail</p>
+                <h3>每日剪辑明细</h3>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>日期</th>
+                      <th>剪辑</th>
+                      <th>复杂片</th>
+                      <th>复杂片名 / 备注</th>
+                    </tr>
+                  </thead>
+                  <tbody id="detailRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <aside class="chart-panel" aria-label="柱状统计图">
+              <div class="panel-heading">
+                <p>Bar Chart</p>
+                <h3>每日产出柱状图</h3>
+              </div>
+              <div class="chart-legend">
+                <span><i class="edit-dot"></i>剪辑数量</span>
+                <span><i class="complex-dot"></i>复杂片</span>
+              </div>
+              <div id="barChart" class="bar-chart"></div>
+            </aside>
+          </div>
+        </section>
+      </section>
+
+      <p id="statusText" class="status-text">报告会在打开时自动读取最新数据。</p>
+    </main>
+
+    <script src="./monthly-report.js" type="module"></script>
+  </body>
+</html>
