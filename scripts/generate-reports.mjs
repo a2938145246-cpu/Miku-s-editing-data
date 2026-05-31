@@ -54,16 +54,36 @@ function getTotals(records) {
   }
 }
 
+function getChinaDateTimeString(date = new Date()) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+function formatList(items) {
+  if (!items?.length) return '-'
+  return items.join('；')
+}
+
 function createReport(type, today, records) {
   const weekly = type === 'weekly'
   const periodStart = weekly ? getWeekStart(today) : `${getMonthKey(today)}-01`
   const periodEnd = weekly ? getWeekEnd(today) : today
   const period = weekly ? `${periodStart} 至 ${periodEnd}` : getMonthKey(today)
-  const scopedRecords = records.filter((record) =>
-    weekly
-      ? record.date >= periodStart && record.date <= periodEnd
-      : getMonthKey(record.date) === getMonthKey(today),
-  )
+  const scopedRecords = records
+    .filter((record) =>
+      weekly
+        ? record.date >= periodStart && record.date <= periodEnd
+        : getMonthKey(record.date) === getMonthKey(today),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date))
   const totals = getTotals(scopedRecords)
   const title = weekly ? `周总结 ${period}` : `月总结 ${period}`
   const fileName = `${weekly ? 'weekly' : 'monthly'}-${weekly ? periodStart : getMonthKey(today)}.md`
@@ -72,23 +92,28 @@ function createReport(type, today, records) {
   const body = [
     `# ${title}`,
     '',
-    `生成时间：${new Date().toISOString()}`,
+    `生成时间：${getChinaDateTimeString()}`,
     '',
-    `- 剪辑总数：${totals.editCount}`,
-    `- 复杂片数量：${totals.complexCount}`,
+    '## 总览',
+    '',
+    `- 剪辑总数：${totals.editCount} 条`,
+    `- 复杂片数量：${totals.complexCount} 条`,
     `- 复杂片占比：${totals.ratio}%`,
-    `- 记录天数：${scopedRecords.length}`,
-    `- 活跃天数：${totals.activeDays}`,
-    `- 活跃日均剪辑：${totals.averagePerActiveDay}`,
-    bestDay ? `- 最高产出日：${bestDay.date}，剪辑 ${bestDay.editCount} 个` : '- 最高产出日：暂无',
+    `- 记录天数：${scopedRecords.length} 天`,
+    `- 活跃天数：${totals.activeDays} 天`,
+    `- 活跃日均剪辑：${totals.averagePerActiveDay} 条`,
+    bestDay
+      ? `- 最高产出日：${bestDay.date}，剪辑 ${bestDay.editCount} 条，复杂片 ${bestDay.complexCount} 条`
+      : '- 最高产出日：暂无',
     '',
     '## 明细',
     '',
-    '| 日期 | 剪辑数量 | 复杂片数量 | 备注 |',
-    '| --- | ---: | ---: | --- |',
-    ...scopedRecords
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((record) => `| ${record.date} | ${record.editCount} | ${record.complexCount} | ${record.note || '-'} |`),
+    '| 日期 | 剪辑数量 | 复杂片数量 | 复杂片名 | 备注 |',
+    '| --- | ---: | ---: | --- | --- |',
+    ...scopedRecords.map(
+      (record) =>
+        `| ${record.date} | ${record.editCount} | ${record.complexCount} | ${formatList(record.complexVideoNames)} | ${record.note || '-'} |`,
+    ),
     '',
   ].join('\n')
 
@@ -123,4 +148,4 @@ const reports = [
 ].sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))
 
 fs.writeFileSync(reportsPath, `${JSON.stringify({ reports }, null, 2)}\n`, 'utf8')
-console.log(`Generated ${nextReport.title}`)
+console.log(`已生成 ${nextReport.title}`)
