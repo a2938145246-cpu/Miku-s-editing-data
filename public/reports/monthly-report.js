@@ -2,6 +2,8 @@ const dataUrl = `../data/editing-records.json?ts=${Date.now()}`
 const numberFormat = new Intl.NumberFormat('zh-CN')
 
 const $ = (id) => document.getElementById(id)
+let latestPayload = null
+let selectedMonth = ''
 
 function getChinaDateString(date = new Date()) {
   const parts = new Intl.DateTimeFormat('zh-CN', {
@@ -23,6 +25,11 @@ function getMonthKey(date) {
 function getRequestedMonth() {
   const params = new URLSearchParams(window.location.search)
   return params.get('month') || getMonthKey(getChinaDateString())
+}
+
+function getMonthTitle(month) {
+  const [year, monthNumber] = month.split('-')
+  return `${year}年${Number(monthNumber)}月`
 }
 
 function getTotals(records) {
@@ -106,8 +113,64 @@ function renderChart(records) {
   }
 }
 
-function renderReport(payload) {
-  const month = getRequestedMonth()
+function getMonthRecords(payload, month) {
+  return (payload.records || [])
+    .filter((record) => getMonthKey(record.date) === month)
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+function getMonthGroups(payload) {
+  return [...new Set((payload.records || []).map((record) => getMonthKey(record.date)))]
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a))
+}
+
+function renderAccordion(payload, activeMonth) {
+  const accordion = $('monthAccordion')
+  if (!accordion) return
+  accordion.innerHTML = ''
+
+  for (const month of getMonthGroups(payload)) {
+    const records = getMonthRecords(payload, month)
+    const totals = getTotals(records)
+    const bestDay = [...records].sort((a, b) => (b.editCount || 0) - (a.editCount || 0))[0]
+    const item = document.createElement('article')
+    item.className = `month-item${month === activeMonth ? ' is-open' : ''}`
+    item.innerHTML = `
+      <button class="month-trigger" type="button" aria-expanded="${month === activeMonth}">
+        <span class="month-name">${getMonthTitle(month)}</span>
+        <span class="month-summary">剪辑 ${numberFormat.format(totals.editCount)} 条 · 复杂片 ${numberFormat.format(totals.complexCount)} 条 · 记录 ${records.length} 天</span>
+        <span class="month-arrow">⌄</span>
+      </button>
+      <div class="month-panel">
+        <div class="month-panel-grid">
+          <span><b>${numberFormat.format(totals.editCount)}</b>剪辑总数</span>
+          <span><b>${numberFormat.format(totals.complexCount)}</b>复杂片</span>
+          <span><b>${totals.complexRatio}%</b>复杂片占比</span>
+          <span><b>${bestDay ? bestDay.date.slice(5) : '-'}</b>最高产出日</span>
+        </div>
+      </div>
+    `
+    item.querySelector('.month-trigger')?.addEventListener('click', () => {
+      selectMonth(month, true)
+    })
+    accordion.append(item)
+  }
+}
+
+function selectMonth(month, updateUrl = false) {
+  if (!latestPayload) return
+  selectedMonth = month
+  if (updateUrl) {
+    const url = new URL(window.location.href)
+    url.searchParams.set('month', month)
+    window.history.replaceState({}, '', url)
+  }
+  renderReport(latestPayload, selectedMonth)
+  renderAccordion(latestPayload, selectedMonth)
+}
+
+function renderReport(payload, month) {
   const records = (payload.records || [])
     .filter((record) => getMonthKey(record.date) === month)
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -116,7 +179,7 @@ function renderReport(payload) {
   const goal = Number(payload.monthlyGoals?.[month] || 0)
   const progress = goal > 0 ? Math.round((totals.editCount / goal) * 100) : 0
 
-  setText('monthLabel', `${month} 实时月报`)
+  setText('monthLabel', `${getMonthTitle(month)} 实时月报`)
   setText('reportTitle', `${month} 剪辑数据情况表`)
   setText('totalEdits', numberFormat.format(totals.editCount))
   setText('complexTotal', numberFormat.format(totals.complexCount))
@@ -150,7 +213,11 @@ async function loadReport() {
   const response = await fetch(dataUrl, { cache: 'no-store' })
   if (!response.ok) throw new Error('数据文件读取失败')
   const payload = await response.json()
-  renderReport(payload)
+  latestPayload = payload
+  const months = getMonthGroups(payload)
+  const requestedMonth = getRequestedMonth()
+  selectedMonth = months.includes(requestedMonth) ? requestedMonth : months[0] || requestedMonth
+  selectMonth(selectedMonth)
 }
 
 $('refreshButton')?.addEventListener('click', () => {
