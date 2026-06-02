@@ -14,6 +14,7 @@ const EDGE_USER_DATA_DIR =
   process.env.EDGE_USER_DATA_DIR ?? 'C:/Users/Administrator/AppData/Local/Microsoft/Edge/User Data';
 const EDGE_PROFILE = process.env.EDGE_PROFILE ?? 'Default';
 const DEBUG_PORT = Number(process.env.EDGE_DEBUG_PORT ?? '9222');
+const REVIEW_DAYS = Number(process.env.ZUOWENWU_REVIEW_DAYS ?? '7');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -168,6 +169,34 @@ function sortByDateDesc(records) {
   return [...records].sort((left, right) => right.date.localeCompare(left.date));
 }
 
+function shiftIsoDate(isoDate, days) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day));
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function buildSyncWindow(existingRecords, sourceDates) {
+  if (existingRecords.length === 0 || sourceDates.length === 0) {
+    return {
+      mode: 'full',
+      startDate: sourceDates[0] ?? null,
+      endDate: sourceDates.at(-1) ?? null,
+    };
+  }
+
+  const latestExistingDate = existingRecords[0].date;
+  const latestSourceDate = sourceDates.at(-1);
+  const startDate = shiftIsoDate(latestExistingDate, -REVIEW_DAYS);
+
+  return {
+    mode: 'incremental',
+    startDate,
+    endDate: latestSourceDate,
+    latestExistingDate,
+  };
+}
+
 async function loadSourceRows() {
   await ensureDebugBrowser();
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
@@ -279,7 +308,21 @@ async function main() {
   const raw = await fs.readFile(DATA_PATH, 'utf8');
   const data = JSON.parse(raw);
   const sourceRows = await loadSourceRows();
-  const { grouped: sourceByDate, mismatches } = aggregateSourceRows(sourceRows);
+  const { grouped: allSourceByDate, mismatches } = aggregateSourceRows(sourceRows);
+  const sourceDates = [...allSourceByDate.keys()].sort();
+  const syncWindow = buildSyncWindow(data.records, sourceDates);
+  const sourceByDate = new Map(
+    [...allSourceByDate.entries()].filter(
+      ([date]) =>
+        (!syncWindow.startDate || date >= syncWindow.startDate) &&
+        (!syncWindow.endDate || date <= syncWindow.endDate),
+    ),
+  );
+  const processedMismatches = mismatches.filter(
+    ({ date }) =>
+      (!syncWindow.startDate || date >= syncWindow.startDate) &&
+      (!syncWindow.endDate || date <= syncWindow.endDate),
+  );
 
   const existingByDate = new Map(data.records.map((record) => [record.date, record]));
   const changedDates = [];
@@ -360,9 +403,11 @@ async function main() {
     JSON.stringify(
       {
         changedDates: changedDates.sort((left, right) => left.date.localeCompare(right.date)),
-        latestSourceDate: [...sourceByDate.keys()].sort().at(-1) ?? null,
-        totalSourceDates: sourceByDate.size,
-        sourceCountMismatches: mismatches,
+        latestSourceDate: sourceDates.at(-1) ?? null,
+        totalSourceDates: allSourceByDate.size,
+        processedSourceDates: sourceByDate.size,
+        syncWindow,
+        sourceCountMismatches: processedMismatches,
       },
       null,
       2,
