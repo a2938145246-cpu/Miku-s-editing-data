@@ -1,68 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import process from 'node:process';
-import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
 const DOC_URL = 'https://docs.qq.com/sheet/DQk5VTGhIdlJORlJo';
 const TARGET_EDITOR = '左文武';
-const TARGET_SHEET = '剪辑端填写8月(新)';
+const TARGET_SHEET_NAME = '剪辑端填写8月(新)';
+const TARGET_SHEET_ID = 'ho459s';
 const DATA_PATH = path.resolve('public/data/editing-records.json');
-const EDGE_PATH =
-  process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const EDGE_USER_DATA_DIR =
-  process.env.EDGE_USER_DATA_DIR ?? 'C:/Users/Administrator/AppData/Local/Microsoft/Edge/User Data';
-const EDGE_PROFILE = process.env.EDGE_PROFILE ?? 'Default';
-const DEBUG_PORT = Number(process.env.EDGE_DEBUG_PORT ?? '9222');
 const REVIEW_DAYS = Number(process.env.ZUOWENWU_REVIEW_DAYS ?? '7');
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`请求失败: ${url} -> ${response.status}`);
-  }
-  return response.json();
-}
-
-async function ensureDebugBrowser() {
-  try {
-    const version = await fetchJson(`http://127.0.0.1:${DEBUG_PORT}/json/version`);
-    return { started: false, version };
-  } catch {
-    // Fall through and start Edge with the persisted profile.
-  }
-
-  spawn(
-    EDGE_PATH,
-    [
-      `--remote-debugging-port=${DEBUG_PORT}`,
-      `--user-data-dir=${EDGE_USER_DATA_DIR}`,
-      `--profile-directory=${EDGE_PROFILE}`,
-      DOC_URL,
-    ],
-    {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: false,
-    },
-  ).unref();
-
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    try {
-      const version = await fetchJson(`http://127.0.0.1:${DEBUG_PORT}/json/version`);
-      return { started: true, version };
-    } catch {
-      await sleep(1_000);
-    }
-  }
-
-  throw new Error('无法启动带调试端口的 Edge。');
-}
 
 function cellText(cell) {
   if (!cell) return null;
@@ -79,9 +24,11 @@ function cellText(cell) {
 }
 
 function normalizeTitle(text) {
-  return text
+  return String(text ?? '')
     .replace(/[#＃]/g, '')
-    .replace(/[\u00a0\u2002-\u200b\u202f\u3000]/g, ' ')
+    .replace(/[\\]+/g, '/')
+    .replace(/[，、；;]/g, '/')
+    .replace(/[\u00a0\u2002-\u200b\u202f\u3000\u2005\u2006\u2007\u2008\u2009]/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/[\\/]+$/g, '')
     .trim();
@@ -91,11 +38,27 @@ function splitImplicitTitles(segment) {
   const normalized = normalizeTitle(segment);
   if (!normalized) return [];
 
-  const marker = /[\u4e00-\u9fff]{2,4}-/g;
+  const commonSurnames = new Set(
+    '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀羊於惠甄曲家封储靳焦牧山蔡田胡易艾文龙白邓谭彭邝农岑涂钟'
+  );
   const starts = [];
-  let match;
-  while ((match = marker.exec(normalized)) !== null) {
-    starts.push(match.index);
+  for (let index = 0; index < normalized.length; index += 1) {
+    const marker = normalized[index];
+    if (marker !== '-' && marker !== '·') continue;
+
+    const candidates = [];
+    for (const length of [3, 2, 4]) {
+      const start = index - length;
+      if (start < 0) continue;
+      const name = normalized.slice(start, index);
+      if (!/^[\u4e00-\u9fff]{2,4}$/.test(name)) continue;
+      if (!commonSurnames.has(name[0])) continue;
+      candidates.push(start);
+    }
+
+    if (candidates.length > 0) {
+      starts.push(Math.min(...candidates));
+    }
   }
 
   if (starts.length <= 1 || starts[0] !== 0) {
@@ -113,7 +76,7 @@ function splitImplicitTitles(segment) {
 }
 
 function expandRepeatedTitle(title) {
-  const match = title.match(/^(.*?)[×xX*]\s*(\d+)$/);
+  const match = title.match(/^(.*?)[×xX*]\s*(\d+)\s*(?:条)?$/);
   if (!match) return [title];
   const base = normalizeTitle(match[1]);
   const count = Number(match[2]);
@@ -124,6 +87,7 @@ function expandRepeatedTitle(title) {
 function extractTitles(...texts) {
   return texts
     .flatMap((text) => String(text ?? '').split(/[\r\n/]+/))
+    .flatMap((segment) => segment.split(/\s{2,}/))
     .flatMap((segment) => splitImplicitTitles(segment))
     .flatMap((segment) => expandRepeatedTitle(segment))
     .map((title) => normalizeTitle(title))
@@ -197,65 +161,137 @@ function buildSyncWindow(existingRecords, sourceDates) {
   };
 }
 
-async function loadSourceRows() {
-  await ensureDebugBrowser();
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
-  try {
-    const page =
-      browser
-        .contexts()
-        .flatMap((context) => context.pages())
-        .find((candidate) => candidate.url().includes('docs.qq.com/sheet')) ??
-      (await browser.contexts()[0].newPage());
+async function waitForWorkbook(page) {
+  await page.waitForFunction(() => Boolean(window.SpreadsheetApp?.workbook), undefined, {
+    timeout: 60_000,
+  });
+}
 
-    await page.goto(DOC_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
+async function hydrateTargetSheet(page, targetSheetId) {
+  let stableRounds = 0;
+  let previousEndRow = -1;
 
-    const payload = await page.evaluate(({ targetEditor, targetSheet }) => {
-      const workbook = window.SpreadsheetApp?.workbook;
-      if (!workbook) {
-        throw new Error('SpreadsheetApp.workbook 不存在');
-      }
-
-      const sheet = workbook.worksheetManager.sheetList.find(
-        (candidate) => candidate._AnT === targetSheet || candidate.sheetProperties?.codeName === targetSheet,
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const endRow = await page.evaluate((sheetId) => {
+      const sheet = window.SpreadsheetApp?.workbook?.worksheetManager?.sheetList?.find(
+        (candidate) => candidate.cellDataGrid?.usedRange?.sheetId === sheetId,
       );
-      if (!sheet) {
-        throw new Error(`未找到目标子表: ${targetSheet}`);
-      }
+      return sheet?.cellDataGrid?.usedRange?.endRowIndex ?? -1;
+    }, targetSheetId);
 
-      const grid = sheet.cellDataGrid;
-      const rows = [];
-      for (let rowIndex = 3; rowIndex <= grid.usedRange.endRowIndex; rowIndex += 1) {
-        const editor = grid.getCellData(rowIndex, 0)?.value ?? null;
-        if (editor !== targetEditor) continue;
+    if (endRow === previousEndRow) {
+      stableRounds += 1;
+    } else {
+      stableRounds = 0;
+      previousEndRow = endRow;
+    }
 
-        rows.push({
-          rowIndex,
-          date: grid.getCellData(rowIndex, 1)?.formattedValue?.value ?? null,
-          editCount: grid.getCellData(rowIndex, 2)?.formattedValue?.value ?? null,
-          c3: grid.getCellData(rowIndex, 3),
-          c4: grid.getCellData(rowIndex, 4),
-          c5: grid.getCellData(rowIndex, 5),
-          c6: grid.getCellData(rowIndex, 6),
-        });
-      }
+    if (stableRounds >= 2 && endRow >= 400) {
+      break;
+    }
 
-      return rows.map((row) => ({
-        rowIndex: row.rowIndex,
-        date: row.date,
-        editCount: row.editCount,
-        c3: row.c3,
-        c4: row.c4,
-        c5: row.c5,
-        c6: row.c6,
-      }));
-    }, { targetEditor: TARGET_EDITOR, targetSheet: TARGET_SHEET });
+    await page.mouse.wheel(0, 4000);
+    await page.waitForTimeout(1_500);
+  }
+}
+
+async function resolveTargetSheetId(page) {
+  await page.goto(DOC_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await waitForWorkbook(page);
+  await page.waitForTimeout(8_000);
+
+  const meta = await page.evaluate((targetSheetName) => {
+    const sheets = window.spreadConfig?._EJ?.collab_client_vars?.header?.[0]?.d ?? [];
+    return {
+      currentSheetId: window.spreadConfig?._EJ?.collab_client_vars?.padSubId ?? null,
+      sheets: sheets.map((sheet) => ({
+        id: sheet.id,
+        name: sheet.name,
+        hidden: Boolean(sheet.hidden),
+      })),
+      target:
+        sheets.find((sheet) => sheet.name === targetSheetName) ??
+        sheets.find((sheet) => String(sheet.name ?? '').includes('剪辑端')) ??
+        null,
+    };
+  }, TARGET_SHEET_NAME);
+
+  if (meta.target?.id) {
+    return meta.target.id;
+  }
+
+  return TARGET_SHEET_ID;
+}
+
+async function loadSourceRows() {
+  const browser = await chromium.launch({ headless: true });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
+    const targetSheetId = await resolveTargetSheetId(page);
+
+    await page.goto(`${DOC_URL}?tab=${targetSheetId}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await waitForWorkbook(page);
+    await page.waitForTimeout(10_000);
+    await hydrateTargetSheet(page, targetSheetId);
+
+    const payload = await page.evaluate(
+      async ({ targetSheetId, targetEditor }) => {
+        const workbook = window.SpreadsheetApp?.workbook;
+        if (!workbook) {
+          throw new Error('SpreadsheetApp.workbook 不存在');
+        }
+
+        let targetSheet =
+          workbook.worksheetManager.sheetList.find((sheet) => sheet.sheetId === targetSheetId) ??
+          workbook.worksheetManager.sheetList.find(
+            (sheet) => sheet.cellDataGrid?.usedRange?.sheetId === targetSheetId,
+          );
+
+        if (!targetSheet) {
+          throw new Error(`未找到目标工作表 ID: ${targetSheetId}`);
+        }
+
+        if (targetSheet.cellDataGrid?.usedRange?.endRowIndex < 0) {
+          await new Promise((resolve) => setTimeout(resolve, 5_000));
+          targetSheet =
+            workbook.worksheetManager.sheetList.find((sheet) => sheet.sheetId === targetSheetId) ??
+            targetSheet;
+        }
+
+        const grid = targetSheet.cellDataGrid;
+        if (!grid || grid.usedRange.endRowIndex < 0) {
+          throw new Error('目标工作表未加载出有效数据');
+        }
+
+        const rows = [];
+        for (let rowIndex = 3; rowIndex <= grid.usedRange.endRowIndex; rowIndex += 1) {
+          const editor = grid.getCellData(rowIndex, 0)?.formattedValue?.value ?? grid.getCellData(rowIndex, 0)?.value;
+          if (editor !== targetEditor) continue;
+
+          rows.push({
+            rowIndex,
+            date: grid.getCellData(rowIndex, 1),
+            editCount: grid.getCellData(rowIndex, 2),
+            c3: grid.getCellData(rowIndex, 3),
+            c4: grid.getCellData(rowIndex, 4),
+            c5: grid.getCellData(rowIndex, 5),
+            c6: grid.getCellData(rowIndex, 6),
+          });
+        }
+
+        return rows;
+      },
+      { targetSheetId, targetEditor: TARGET_EDITOR },
+    );
 
     return payload.map((row) => ({
       rowIndex: row.rowIndex,
-      date: toIsoDate(row.date),
-      sourceEditCount: Number(row.editCount) || 0,
+      date: toIsoDate(cellText(row.date)),
+      sourceEditCount: Number(cellText(row.editCount)) || 0,
       videoNames: extractTitles(
         cellText(row.c3),
         cellText(row.c4),
