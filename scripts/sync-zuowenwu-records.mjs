@@ -26,6 +26,7 @@ function cellText(cell) {
 function normalizeTitle(text) {
   return String(text ?? '')
     .replace(/[#＃]/g, '')
+    .replace(/[\\]+\s*-/g, '-')
     .replace(/[\\]+/g, '/')
     .replace(/[，、；;]/g, '/')
     .replace(/[\u00a0\u2002-\u200b\u202f\u3000\u2005\u2006\u2007\u2008\u2009]/g, ' ')
@@ -46,18 +47,19 @@ function splitImplicitTitles(segment) {
     const marker = normalized[index];
     if (marker !== '-' && marker !== '·') continue;
 
-    const candidates = [];
-    for (const length of [3, 2, 4]) {
+    let selectedStart = null;
+    for (const length of [2, 3, 4]) {
       const start = index - length;
       if (start < 0) continue;
       const name = normalized.slice(start, index);
       if (!/^[\u4e00-\u9fff]{2,4}$/.test(name)) continue;
       if (!commonSurnames.has(name[0])) continue;
-      candidates.push(start);
+      selectedStart = start;
+      break;
     }
 
-    if (candidates.length > 0) {
-      starts.push(Math.min(...candidates));
+    if (selectedStart != null) {
+      starts.push(selectedStart);
     }
   }
 
@@ -105,6 +107,17 @@ function toIsoDate(sourceDate) {
 
 function joinNote(videoNames) {
   return videoNames.join('/');
+}
+
+function uniqueItems(items) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    result.push(item);
+  }
+  return result;
 }
 
 function buildCounts(items) {
@@ -323,6 +336,8 @@ function aggregateSourceRows(rows) {
   }
 
   for (const record of grouped.values()) {
+    record.videoNames = uniqueItems(record.videoNames);
+    record.complexVideoNames = uniqueItems(record.complexVideoNames);
     if (record.sourceEditCount !== record.videoNames.length) {
       mismatches.push({
         date: record.date,
