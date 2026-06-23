@@ -28,11 +28,19 @@ function normalizeTitle(text) {
     .replace(/[#＃]/g, '')
     .replace(/[\\]+\s*-/g, '-')
     .replace(/[\\]+/g, '/')
-    .replace(/[，、；;]/g, '/')
     .replace(/[\u00a0\u2002-\u200b\u202f\u3000\u2005\u2006\u2007\u2008\u2009]/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/[\\/]+$/g, '')
     .trim();
+}
+
+function splitDelimitedTitles(text) {
+  return String(text ?? '')
+    .split(/[\r\n/]+/)
+    .flatMap((segment) => segment.split(/\s{2,}/))
+    .flatMap((segment) =>
+      segment.split(/[、，；;]+(?=[\u4e00-\u9fff]{2,4}[-路])/),
+    );
 }
 
 function splitImplicitTitles(segment) {
@@ -88,8 +96,7 @@ function expandRepeatedTitle(title) {
 
 function extractTitles(...texts) {
   return texts
-    .flatMap((text) => String(text ?? '').split(/[\r\n/]+/))
-    .flatMap((segment) => segment.split(/\s{2,}/))
+    .flatMap((text) => splitDelimitedTitles(text))
     .flatMap((segment) => splitImplicitTitles(segment))
     .flatMap((segment) => expandRepeatedTitle(segment))
     .map((title) => normalizeTitle(title))
