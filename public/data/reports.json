@@ -1,6 +1,18 @@
 {
   "reports": [
     {
+      "type": "weekly",
+      "title": "周总结 2026-07-13 至 2026-07-19",
+      "period": "2026-07-13 至 2026-07-19",
+      "editCount": 0,
+      "complexCount": 0,
+      "activeDays": 0,
+      "averagePerActiveDay": 0,
+      "ratio": 0,
+      "generatedAt": "2026-07-13T15:37:12.425Z",
+      "path": "reports/weekly-2026-07-13.md"
+    },
+    {
       "type": "monthly",
       "title": "月总结 2026-06",
       "period": "2026-06",
