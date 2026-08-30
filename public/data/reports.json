@@ -1,6 +1,30 @@
 {
   "reports": [
     {
+      "type": "monthly",
+      "title": "月总结 2026-08",
+      "period": "2026-08",
+      "editCount": 0,
+      "complexCount": 0,
+      "activeDays": 0,
+      "averagePerActiveDay": 0,
+      "ratio": 0,
+      "generatedAt": "2026-08-30T18:44:37.772Z",
+      "path": "reports/monthly-2026-08.md"
+    },
+    {
+      "type": "weekly",
+      "title": "周总结 2026-08-31 至 2026-09-06",
+      "period": "2026-08-31 至 2026-09-06",
+      "editCount": 0,
+      "complexCount": 0,
+      "activeDays": 0,
+      "averagePerActiveDay": 0,
+      "ratio": 0,
+      "generatedAt": "2026-08-30T18:44:37.609Z",
+      "path": "reports/weekly-2026-08-31.md"
+    },
+    {
       "type": "weekly",
       "title": "周总结 2026-08-17 至 2026-08-23",
       "period": "2026-08-17 至 2026-08-23",
